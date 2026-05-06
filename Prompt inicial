@@ -1,0 +1,19 @@
+Considerando que se perdió el prompt original (no se porque), vuelvo a escribirlo:
+
+Se debe generar una plataforma de mantenimiento para propósito general, considerando diversos mercados entre los que destacan: mantenimiento de piscinas, sistemas de seguridad electrónica, sistemas de incendio, sistemas hvac, sistemas generales (motores, tableros, maquinarias, etc. La plataforma deberá ser en modelo de negocios SaaS para mercado chileno, con enfoque en las empresas que ya prestan el servicio, algunas de las cosas que debe tener la plataforma son:
+* Portal administrador que maneje:
+** Registros de mantenimientos detallados considerando que cada cliente posea un código QR físico que sea el login de inicio para comenzar los trabajos, ademas de las fotos iniciales para verificar estado inicial, el registro debe ser por cliente, por usuario (trabajador, técnico, maestro), debe poder enviarse por correo en pdf con todos los detalles e insumos utilizados, debe consiserar valor por cada elemento utilizado y esto debe descontarse del stock. Parte del objetivo tambien es saber los rendimientos del personal  en terreno.
+** Módulo clientes y activos: debe permitir agregar clientes con la descripción detallada de sus activos, insumos recurrentes a considerar, marca, modelo, de sus equipos, frecuencia de mantenimiento necesario, etc. Incialmente para clientes ya operativos, esto debe ser hecho con un levantamiento y comepletado con dispositivo movil que vuelque la información al sistema.
+** Módulo inventario completo.
+** Módulo cotizaciones completo que descuente del inventario o que agregue nuevos productos.
+** Módulo finanzas, con los registros valorados y detallados de los servicios realizados por mes, personal, etc. debe también incorporar sistema de cobros consolidado, registro de pagos, pasarela de cobros, etc.
+** Módulo logística: debe poder establecer rutas, frecuencias, vehículos, personal asociado a cada cliente, etc.
+** Módulo estadísticas: ingresos, rendimientos, kpis, etc.
+
+* Portal cliente, donde pueda revisar todo lo referente a su activo mantenido: registros pasados, plan futuro, solicitudes, pagos con registros de pagos y pasarela de pagos, etc.
+
+===Contexto===
+Mi primer cliente (quien me solicitó este desarrollo) trabaja manteniendo pisicinas, posee actualmente 300 clientes, con miras a conseguir 500; tolo lo maneja en excel, los cobros son un desastre, posee 8 vehículos que despliega con distintas rutas diarias, cada trabajador en terreno atiende 8 a 10 piscinas por día. Mi cliente no sabe a que hora llegan los trabajadores, cuanto trabajan a que hora se van sino por el cliente final. Este cliente es una muestra de otros en otros segmentos, que pudieran necesitar algo similar.
+===fin contexto===
+
+Desarrollar plataforma completa con estandares de trabajo en metodología SOLID.

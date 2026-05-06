@@ -10,8 +10,11 @@ export interface SupplyUsage {
 export interface MaintenanceRecord {
   id: string;
   assetId: string;
+  assetName?: string; // Desnormalizado para la UI
   technicianId: string;
+  technicianName?: string; // Desnormalizado para la UI
   clientId: string;
+  clientName?: string; // Desnormalizado para la UI
   status: MaintenanceStatus;
   
   scheduledDate: Date;

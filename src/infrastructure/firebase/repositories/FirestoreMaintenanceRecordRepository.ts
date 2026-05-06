@@ -52,8 +52,11 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
     return {
       id,
       assetId: data.assetId,
+      assetName: data.assetName,
       technicianId: data.technicianId,
+      technicianName: data.technicianName,
       clientId: data.clientId,
+      clientName: data.clientName,
       status: data.status,
       scheduledDate: data.scheduledDate?.toDate() || new Date(),
       startedAt: data.startedAt?.toDate(),

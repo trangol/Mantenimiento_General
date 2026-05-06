@@ -11,7 +11,14 @@ const firebaseConfig = {
 };
 
 // Singleton pattern for Firebase initialization
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+let app;
+try {
+  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+} catch (error) {
+  console.error("Firebase Initialization Error:", error);
+  // Fallback to prevent app crash if config is missing
+  app = initializeApp({ apiKey: 'fallback', projectId: 'fallback' }, 'fallback-app');
+}
 const db = getFirestore(app);
 
 export { app, db };

@@ -1,77 +1,136 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-  Card, SectionHeader, StatusBadge, Badge, EmptyState,
-} from '@/presentation/components/ui';
-
-const mockOTs = [
-  {
-    id: 'OT-2841', clientName: 'Club de Campo Las Araucarias', assetName: 'Piscina Olímpica',
-    technician: 'Juan Pérez', scheduledDate: '30/04/2026', startedAt: '08:45', completedAt: null,
-    status: 'in_progress' as const, supplies: 3, totalCost: 0,
-  },
-  {
-    id: 'OT-2840', clientName: 'Condominio Los Pinos', assetName: 'Piscina Temperada',
-    technician: 'Carlos Muñoz', scheduledDate: '30/04/2026', startedAt: '09:10', completedAt: '10:55',
-    status: 'completed' as const, supplies: 5, totalCost: 18500,
-  },
-  {
-    id: 'OT-2839', clientName: 'Hotel Costanera', assetName: 'Piscina Principal',
-    technician: 'Pedro Soto', scheduledDate: '30/04/2026', startedAt: '07:30', completedAt: '09:00',
-    status: 'completed' as const, supplies: 4, totalCost: 31000,
-  },
-  {
-    id: 'OT-2838', clientName: 'Residencial El Bosque', assetName: 'Piscina Infantil',
-    technician: 'Miguel Torres', scheduledDate: '30/04/2026', startedAt: null, completedAt: null,
-    status: 'pending' as const, supplies: 0, totalCost: 0,
-  },
-  {
-    id: 'OT-2837', clientName: 'Centro Deportivo Malloco', assetName: 'Piscina Semi-Olímpica',
-    technician: 'Juan Pérez', scheduledDate: '30/04/2026', startedAt: null, completedAt: null,
-    status: 'pending' as const, supplies: 0, totalCost: 0,
-  },
-  {
-    id: 'OT-2836', clientName: 'Club Los Dominicos', assetName: 'Piscina Adultos',
-    technician: 'Roberto Díaz', scheduledDate: '29/04/2026', startedAt: '08:00', completedAt: '10:20',
-    status: 'completed' as const, supplies: 6, totalCost: 27300,
-  },
-];
+import React, { useState, useEffect } from 'react';
+import { Card, SectionHeader, StatusBadge, Badge, EmptyState } from '@/presentation/components/ui';
+import { FirestoreMaintenanceRecordRepository } from '@/infrastructure/firebase/repositories/FirestoreMaintenanceRecordRepository';
+import { MaintenanceRecord, MaintenanceStatus } from '@/core/domain/MaintenanceRecord';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db } from '@/infrastructure/firebase/firebaseConfig';
 
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed';
 
+const repo = new FirestoreMaintenanceRecordRepository();
+
 export function MaintenancePage() {
+  const [ots, setOts] = useState<MaintenanceRecord[]>([]);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = mockOTs.filter((ot) => {
+  useEffect(() => {
+    try {
+      // Escucha en tiempo real de la colección
+      const q = query(collection(db, 'maintenance_records'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const records = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            scheduledDate: data.scheduledDate?.toDate()?.toLocaleDateString('es-CL') || 'Sin fecha',
+            startedAt: data.startedAt?.toDate()?.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+            completedAt: data.completedAt?.toDate()?.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+            // Guardamos los Date crudos para el dominio, pero aquí los formateamos fácil para la UI temporalmente
+          } as any;
+        });
+        setOts(records);
+        setLoading(false);
+      }, (err) => {
+        console.error(err);
+        setError('Error al conectar con Firestore. Verifica tu .env.local');
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (err) {
+      setError('Falta configuración de Firebase');
+      setLoading(false);
+    }
+  }, []);
+
+  const injectTestOT = async () => {
+    try {
+      setError(null);
+      const randomNum = Math.floor(Math.random() * 10000);
+      const newOT: MaintenanceRecord = {
+        id: `OT-${randomNum}`,
+        assetId: 'ASSET-123',
+        assetName: 'Piscina de Prueba',
+        clientId: 'CLI-123',
+        clientName: 'Cliente Demo Firestore',
+        technicianId: 'TECH-1',
+        technicianName: 'Técnico de Turno',
+        status: 'pending',
+        scheduledDate: new Date(),
+        initialPhotos: [],
+        finalPhotos: [],
+        observations: 'Prueba desde la UI conectada a Firebase',
+        suppliesUsed: [],
+        totalCost: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      await repo.create(newOT);
+    } catch (err: any) {
+      setError(err.message || 'Error al escribir en Firestore');
+    }
+  };
+
+  const advanceStatus = async (ot: any) => {
+    try {
+      const nextMap: Record<string, MaintenanceStatus> = {
+        'pending': 'in_progress',
+        'in_progress': 'completed',
+        'completed': 'pending'
+      };
+      const nextStatus = nextMap[ot.status] || 'pending';
+      await repo.updateStatus(ot.id, nextStatus as MaintenanceStatus);
+      
+      // Si cambia a completado, simulamos poner la hora final
+      if (nextStatus === 'completed') {
+        await repo.update(ot.id, { completedAt: new Date() });
+      } else if (nextStatus === 'in_progress') {
+        await repo.update(ot.id, { startedAt: new Date(), completedAt: undefined });
+      }
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const filtered = ots.filter((ot) => {
     const matchStatus = filter === 'all' || ot.status === filter;
     const matchSearch =
       search === '' ||
-      ot.clientName.toLowerCase().includes(search.toLowerCase()) ||
+      (ot.clientName || '').toLowerCase().includes(search.toLowerCase()) ||
       ot.id.toLowerCase().includes(search.toLowerCase()) ||
-      ot.technician.toLowerCase().includes(search.toLowerCase());
+      (ot.technicianName || '').toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
   });
 
   const counts = {
-    all: mockOTs.length,
-    pending: mockOTs.filter(o => o.status === 'pending').length,
-    in_progress: mockOTs.filter(o => o.status === 'in_progress').length,
-    completed: mockOTs.filter(o => o.status === 'completed').length,
+    all: ots.length,
+    pending: ots.filter(o => o.status === 'pending').length,
+    in_progress: ots.filter(o => o.status === 'in_progress').length,
+    completed: ots.filter(o => o.status === 'completed').length,
   };
 
   return (
     <div className="animate-fade-in">
+      {error && (
+        <div style={{ background: 'var(--danger-500)', color: 'white', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', fontWeight: 500 }}>
+          ⚠️ {error} - Debes configurar las variables de entorno en el archivo .env.local
+        </div>
+      )}
 
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Mantenimientos</h1>
-          <p className="page-desc">Gestión de Órdenes de Trabajo — registro, seguimiento y cierre</p>
+          <h1 className="page-title">Mantenimientos (En Vivo)</h1>
+          <p className="page-desc">Sincronizado en tiempo real con Firebase Firestore</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn btn-secondary btn-sm">📊 Exportar</button>
+          <button className="btn btn-secondary btn-sm" onClick={injectTestOT}>⚡ Crear OT Prueba</button>
           <button className="btn btn-primary btn-sm">+ Nueva OT</button>
         </div>
       </div>
@@ -124,11 +183,15 @@ export function MaintenancePage() {
       {/* Tabla */}
       <Card>
         <div className="table-wrapper" style={{ border: 'none', borderRadius: 0 }}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              Cargando datos desde Firestore...
+            </div>
+          ) : filtered.length === 0 ? (
             <EmptyState
               icon="🔧"
-              title="Sin resultados"
-              description="No hay órdenes de trabajo que coincidan con el filtro aplicado."
+              title="Sin registros en Firestore"
+              description="No hay OTs en la base de datos. Haz clic en 'Crear OT Prueba' para inyectar datos."
             />
           ) : (
             <table>
@@ -142,12 +205,11 @@ export function MaintenancePage() {
                   <th>Inicio</th>
                   <th>Término</th>
                   <th>Estado</th>
-                  <th>Costo</th>
-                  <th></th>
+                  <th>Acción Rápida</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((ot) => (
+                {filtered.map((ot: any) => (
                   <tr key={ot.id}>
                     <td>
                       <span className="font-mono" style={{ color: 'var(--brand-400)', fontSize: '13px' }}>
@@ -155,17 +217,17 @@ export function MaintenancePage() {
                       </span>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 500, fontSize: '13px' }}>{ot.clientName}</div>
+                      <div style={{ fontWeight: 500, fontSize: '13px' }}>{ot.clientName || ot.clientId}</div>
                     </td>
                     <td>
-                      <div className="text-sm text-secondary">{ot.assetName}</div>
+                      <div className="text-sm text-secondary">{ot.assetName || ot.assetId}</div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                         <div className="avatar avatar-sm">
-                          {ot.technician.split(' ').map(n => n[0]).join('')}
+                          {(ot.technicianName || 'T')[0]}
                         </div>
-                        <span style={{ fontSize: '13px' }}>{ot.technician}</span>
+                        <span style={{ fontSize: '13px' }}>{ot.technicianName}</span>
                       </div>
                     </td>
                     <td className="text-sm text-secondary">{ot.scheduledDate}</td>
@@ -180,14 +242,14 @@ export function MaintenancePage() {
                         : <span className="text-muted text-sm">—</span>}
                     </td>
                     <td><StatusBadge status={ot.status} /></td>
-                    <td className="font-semibold" style={{ fontSize: '13px' }}>
-                      {ot.totalCost > 0
-                        ? `$${ot.totalCost.toLocaleString('es-CL')}`
-                        : <span className="text-muted">—</span>}
-                    </td>
                     <td>
-                      <button className="btn btn-ghost btn-sm btn-icon" title="Ver detalle">
-                        ⋯
+                      <button 
+                        onClick={() => advanceStatus(ot)}
+                        className="btn btn-ghost btn-sm" 
+                        title="Cambiar estado"
+                        style={{ fontSize: '12px', padding: '4px 8px' }}
+                      >
+                        Avanzar →
                       </button>
                     </td>
                   </tr>
