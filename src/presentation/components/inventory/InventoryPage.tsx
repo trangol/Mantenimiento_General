@@ -27,7 +27,7 @@ export function InventoryPage() {
           <h1 className="page-title">Inventario General</h1>
           <p className="page-desc">Control de stock en bodega central y vehículos en terreno</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm">📦 Recepción</button>
           <button className="btn btn-primary btn-sm">+ Nuevo Producto</button>
         </div>
@@ -37,8 +37,8 @@ export function InventoryPage() {
         <SectionHeader
           title="Catálogo de Insumos"
           action={
-            <div style={{ position: 'relative', width: '280px' }}>
-              <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-muted)' }}>🔍</span>
+            <div className="search-input-wrap">
+              <span className="search-icon">🔍</span>
               <input
                 type="text"
                 className="form-input"

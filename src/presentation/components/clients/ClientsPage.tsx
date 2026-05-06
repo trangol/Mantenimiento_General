@@ -54,13 +54,13 @@ export function ClientsPage() {
           <h1 className="page-title">Clientes y Activos</h1>
           <p className="page-desc">Gestión de clientes, activos y códigos QR de identificación</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm">📱 Levantamiento Móvil</button>
           <button className="btn btn-primary btn-sm">+ Agregar Cliente</button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr', gap: '20px', transition: 'all 0.3s ease' }}>
+      <div className={`list-detail-grid${selected ? ' has-panel' : ''}`} style={{ transition: 'all 0.3s ease' }}>
 
         {/* Lista clientes */}
         <Card>
@@ -68,8 +68,8 @@ export function ClientsPage() {
             title="Clientes Registrados"
             subtitle={`${mockClients.length} clientes en el sistema`}
             action={
-              <div style={{ position: 'relative', width: '240px' }}>
-                <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--text-muted)' }}>🔍</span>
+              <div className="search-input-wrap">
+                <span className="search-icon">🔍</span>
                 <input
                   type="text"
                   className="form-input"

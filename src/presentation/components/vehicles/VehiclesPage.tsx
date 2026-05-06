@@ -32,7 +32,7 @@ export function VehiclesPage() {
           <h1 className="page-title">Vehículos</h1>
           <p className="page-desc">Gestión de flota, asignaciones y mantención vehicular</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm">📊 Reporte Flota</button>
           <button className="btn btn-primary btn-sm">+ Agregar Vehículo</button>
         </div>
@@ -45,7 +45,7 @@ export function VehiclesPage() {
         <StatCard label="Mantención Próxima" value={nearMaint} icon="⚠️" color="yellow" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 340px' : '1fr', gap: '20px' }}>
+      <div className={`list-detail-grid${selected ? ' has-panel' : ''}`}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', alignContent: 'start' }}>
           {mockVehicles.map(v => {
             const kmToMaint = v.nextMaintenanceKm - v.currentKm;

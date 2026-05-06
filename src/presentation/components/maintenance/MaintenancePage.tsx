@@ -129,7 +129,7 @@ export function MaintenancePage() {
           <h1 className="page-title">Mantenimientos (En Vivo)</h1>
           <p className="page-desc">Sincronizado en tiempo real con Firebase Firestore</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm" onClick={injectTestOT}>⚡ Crear OT Prueba</button>
           <button className="btn btn-primary btn-sm">+ Nueva OT</button>
         </div>
@@ -164,11 +164,8 @@ export function MaintenancePage() {
         <div style={{ flex: 1 }} />
 
         {/* Búsqueda */}
-        <div style={{ position: 'relative', width: '260px' }}>
-          <span style={{
-            position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-            fontSize: '14px', color: 'var(--text-muted)',
-          }}>🔍</span>
+        <div className="search-input-wrap" style={{ flexGrow: 1, maxWidth: '280px' }}>
+          <span className="search-icon">🔍</span>
           <input
             type="text"
             className="form-input"

@@ -31,7 +31,7 @@ export function TeamPage() {
           <h1 className="page-title">Equipo</h1>
           <p className="page-desc">Gestión del personal técnico, roles y rendimiento</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm">📊 Reporte Equipo</button>
           <button className="btn btn-primary btn-sm">+ Agregar Miembro</button>
         </div>
@@ -44,7 +44,7 @@ export function TeamPage() {
         <StatCard label="Rating Promedio" value={`${Math.round(mockTeam.filter(m => m.rating > 0).reduce((s, m) => s + m.rating, 0) / mockTeam.filter(m => m.rating > 0).length)}%`} icon="⭐" color="yellow" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 360px' : '1fr', gap: '20px' }}>
+      <div className={`list-detail-grid${selected ? ' has-panel' : ''}`}>
         <Card>
           <SectionHeader
             title="Personal"

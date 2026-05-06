@@ -35,7 +35,7 @@ export function ReportsPage() {
           <h1 className="page-title">Estadísticas y KPIs</h1>
           <p className="page-desc">Rendimiento del negocio, equipo y análisis financiero</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="page-header-actions">
           {(['month', 'quarter', 'year'] as const).map(p => (
             <button key={p} onClick={() => setPeriod(p)} className={`btn btn-sm ${period === p ? 'btn-primary' : 'btn-secondary'}`}>
               {p === 'month' ? 'Este Mes' : p === 'quarter' ? 'Trimestre' : 'Año'}
@@ -53,7 +53,7 @@ export function ReportsPage() {
         <StatCard label="Tiempo Promedio OT" value="94 min" icon="⏱️" color="yellow" trend={{ value: '-5 min vs anterior', up: true }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '20px' }}>
+      <div className="reports-main-grid" style={{ marginBottom: '20px' }}>
 
         {/* Gráfico de Ingresos */}
         <Card>
@@ -94,7 +94,7 @@ export function ReportsPage() {
         </Card>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      <div className="reports-second-grid">
 
         {/* Rendimiento del Equipo */}
         <Card>

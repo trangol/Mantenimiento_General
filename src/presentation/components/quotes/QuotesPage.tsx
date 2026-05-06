@@ -30,7 +30,7 @@ export function QuotesPage() {
           <h1 className="page-title">Cotizaciones</h1>
           <p className="page-desc">Gestión de propuestas comerciales con descuento de inventario</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="page-header-actions">
           <button className="btn btn-secondary btn-sm">📤 Exportar</button>
           <button className="btn btn-primary btn-sm">+ Nueva Cotización</button>
         </div>
