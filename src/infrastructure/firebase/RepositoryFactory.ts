@@ -2,6 +2,9 @@
  * RepositoryFactory — Patrón Factory + Singleton
  * Centraliza la creación de todos los repositorios.
  * Se instancia una sola vez y devuelve siempre la misma instancia.
+ *
+ * OCP: Agregar nuevos repositorios solo requiere agregar un getter,
+ *      sin modificar los consumers existentes.
  */
 
 import { FirestoreMaintenanceRecordRepository } from './repositories/FirestoreMaintenanceRecordRepository';
@@ -9,12 +12,16 @@ import { FirestoreInventoryRepository } from './repositories/FirestoreInventoryR
 import { FirestoreQuoteRepository } from './repositories/FirestoreQuoteRepository';
 import { FirestoreInvoiceRepository } from './repositories/FirestoreInvoiceRepository';
 import { FirestoreVehicleRepository } from './repositories/FirestoreVehicleRepository';
+import { FirestoreClientRepository } from './repositories/FirestoreClientRepository';
+import { FirestoreAssetRepository } from './repositories/FirestoreAssetRepository';
 
 import { IMaintenanceRecordRepository } from '@/core/repositories/IMaintenanceRecordRepository';
 import { IInventoryRepository } from '@/core/repositories/IInventoryRepository';
 import { IQuoteRepository } from '@/core/repositories/IQuoteRepository';
 import { IInvoiceRepository } from '@/core/repositories/IInvoiceRepository';
 import { IVehicleRepository } from '@/core/repositories/IVehicleRepository';
+import { IClientRepository } from '@/core/repositories/IClientRepository';
+import { IAssetRepository } from '@/core/repositories/IAssetRepository';
 
 class RepositoryFactory {
   private static instance: RepositoryFactory;
@@ -25,6 +32,8 @@ class RepositoryFactory {
   private _quotes?: IQuoteRepository;
   private _invoices?: IInvoiceRepository;
   private _vehicles?: IVehicleRepository;
+  private _clients?: IClientRepository;
+  private _assets?: IAssetRepository;
 
   private constructor() {}
 
@@ -58,6 +67,16 @@ class RepositoryFactory {
   get vehicles(): IVehicleRepository {
     if (!this._vehicles) this._vehicles = new FirestoreVehicleRepository();
     return this._vehicles;
+  }
+
+  get clients(): IClientRepository {
+    if (!this._clients) this._clients = new FirestoreClientRepository();
+    return this._clients;
+  }
+
+  get assets(): IAssetRepository {
+    if (!this._assets) this._assets = new FirestoreAssetRepository();
+    return this._assets;
   }
 }
 
