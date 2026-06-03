@@ -41,12 +41,16 @@ function toDomain(id: string, data: Record<string, unknown>): Client {
 
 /** Mapper Domain → Firestore (excluye id, convierte Dates a Timestamps) */
 function toFirestore(client: Omit<Client, 'id'>): Record<string, unknown> {
-  return {
+  const data: Record<string, unknown> = {
     ...client,
     createdAt: Timestamp.fromDate(client.createdAt),
     updatedAt: Timestamp.fromDate(client.updatedAt),
-    installationDate: undefined, // no aplica para Client
   };
+  // Firestore no acepta undefined — eliminar campos opcionales no definidos
+  Object.keys(data).forEach(key => {
+    if (data[key] === undefined) delete data[key];
+  });
+  return data;
 }
 
 export class FirestoreClientRepository implements IClientRepository {

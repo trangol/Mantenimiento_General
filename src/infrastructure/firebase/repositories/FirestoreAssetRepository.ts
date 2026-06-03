@@ -45,7 +45,7 @@ function toDomain(id: string, data: Record<string, unknown>): Asset {
 
 /** Mapper Domain → Firestore */
 function toFirestore(asset: Omit<Asset, 'id'>): Record<string, unknown> {
-  return {
+  const data: Record<string, unknown> = {
     ...asset,
     installationDate: asset.installationDate
       ? Timestamp.fromDate(asset.installationDate)
@@ -53,6 +53,11 @@ function toFirestore(asset: Omit<Asset, 'id'>): Record<string, unknown> {
     createdAt: Timestamp.fromDate(asset.createdAt),
     updatedAt: Timestamp.fromDate(asset.updatedAt),
   };
+  // Firestore no acepta undefined — eliminar campos opcionales no definidos
+  Object.keys(data).forEach(key => {
+    if (data[key] === undefined) delete data[key];
+  });
+  return data;
 }
 
 export class FirestoreAssetRepository implements IAssetRepository {
