@@ -16,8 +16,9 @@ const CATEGORY_LABELS: Record<InventoryCategory, string> = {
   chemical: 'Químico', equipment: 'Equipo', tool: 'Herramienta',
   spare_part: 'Repuesto', consumable: 'Consumible', other: 'Otro',
 };
-const CATEGORY_COLORS: Record<InventoryCategory, string> = {
-  chemical: 'blue', equipment: 'purple', tool: 'cyan',
+type BadgeColor = 'blue' | 'green' | 'yellow' | 'red' | 'gray' | 'cyan';
+const CATEGORY_COLORS: Record<InventoryCategory, BadgeColor> = {
+  chemical: 'blue', equipment: 'cyan', tool: 'gray',
   spare_part: 'yellow', consumable: 'green', other: 'gray',
 };
 
@@ -446,7 +447,7 @@ export function InventoryPage() {
                               {item.brand && <div className="text-xs text-muted">{item.brand}{item.location ? ` · ${item.location}` : ''}</div>}
                             </td>
                             <td style={{ padding: '10px 14px' }}>
-                              <Badge color={CATEGORY_COLORS[item.category] as 'blue' | 'purple' | 'cyan' | 'yellow' | 'green' | 'gray'}>
+                              <Badge color={CATEGORY_COLORS[item.category]}>
                                 {CATEGORY_LABELS[item.category]}
                               </Badge>
                             </td>
