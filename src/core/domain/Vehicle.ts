@@ -6,7 +6,7 @@ export interface Vehicle {
   brand: string;
   model: string;
   year: number;
-  type: string; // 'furgón', 'camioneta', 'sedan'
+  type: 'furgón' | 'camioneta' | 'sedan' | 'otro';
   status: VehicleStatus;
   assignedDriverId?: string;
   assignedDriverName?: string;
@@ -17,6 +17,62 @@ export interface Vehicle {
   updatedAt: Date;
 }
 
+/**
+ * Frecuencia de visita programada para un cliente/activo.
+ * Permite definir qué días y con qué periodicidad se atiende cada cliente.
+ */
+export type FrequencyType = 'weekly' | 'biweekly' | 'monthly' | 'custom';
+
+export interface RecurringSchedule {
+  id: string;
+  clientId: string;
+  clientName: string;
+  assetId?: string;
+  assetName?: string;
+  assignedTechnicianId: string;
+  assignedTechnicianName: string;
+  vehicleId: string;
+  vehiclePlate: string;
+  frequency: FrequencyType;
+  daysOfWeek: number[]; // 0=Dom, 1=Lun, ..., 6=Sáb
+  estimatedDurationMin: number;
+  address: string;
+  commune: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Parada individual dentro de una ruta diaria (una OT programada).
+ */
+export type RouteStopStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
+
+export interface RouteStop {
+  id: string;
+  routeId: string;
+  order: number;
+  clientId: string;
+  clientName: string;
+  address: string;
+  commune: string;
+  assetId?: string;
+  assetName?: string;
+  technicianId: string;
+  technicianName: string;
+  estimatedDurationMin: number;
+  scheduledTime?: string; // HH:MM estimado
+  actualArrival?: Date;
+  actualDeparture?: Date;
+  status: RouteStopStatus;
+  maintenanceRecordId?: string; // se llena al completar la OT
+  notes?: string;
+}
+
+/**
+ * Ruta diaria: vehículo + técnico + paradas ordenadas.
+ */
 export interface Route {
   id: string;
   name: string;
@@ -25,8 +81,8 @@ export interface Route {
   vehiclePlate: string;
   driverId: string;
   driverName: string;
-  maintenanceRecordIds: string[]; // OTs asignadas en esta ruta
-  estimatedDuration?: number; // minutos
+  stops: RouteStop[];
+  estimatedDuration?: number; // minutos totales
   status: 'planned' | 'in_progress' | 'completed';
   notes?: string;
   createdAt: Date;
