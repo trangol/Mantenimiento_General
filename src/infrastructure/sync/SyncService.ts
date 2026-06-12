@@ -47,9 +47,14 @@ function init() {
 
   window.addEventListener('offline', () => emit({ online: false }));
 
-  // Cada vez que los snapshots quedan en sync con el servidor
+  // Cada vez que los snapshots quedan en sync con el servidor.
+  // IMPORTANTE: este evento dispara con mucha frecuencia; solo emitimos
+  // cuando hay un cambio real de estado (evita tormentas de re-render
+  // que interfieren con formularios abiertos).
   onSnapshotsInSync(db, () => {
-    if (state.online) emit({ syncing: false, lastSyncAt: new Date() });
+    if (state.online && state.syncing) {
+      emit({ syncing: false, lastSyncAt: new Date() });
+    }
   });
 }
 
