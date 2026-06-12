@@ -56,12 +56,20 @@ Reglas:
 
 ## Seguridad y base de datos
 
+- **El usuario NO tiene Firebase CLI.** Reglas e índices se despliegan SOLO vía
+  push a main (GitHub Action `.github/workflows/firebase-deploy.yml`, requiere
+  secrets `FIREBASE_SERVICE_ACCOUNT` y `FIREBASE_PROJECT_ID`) o pegándolos en la
+  consola web de Firebase. NUNCA instruir `firebase deploy` local.
 - `firestore.rules`: aislamiento por tenant. HOY está en `devMode() = true`
-  (sin auth aún). ANTES DE PRODUCCIÓN: poner `devMode()` en false y
-  `firebase deploy --only firestore:rules`.
-- `firestore.indexes.json`: índices compuestos (tenantId + orderBy). Desplegar con
-  `firebase deploy --only firestore:indexes`. Si una query nueva pide índice,
-  Firestore muestra link de creación en consola del navegador — agregar también al JSON.
+  (sin auth aún). ANTES DE PRODUCCIÓN: poner `devMode()` en false y push.
+- **ÍNDICES COMPUESTOS — POLÍTICA ACTUAL**: las queries NO deben combinar
+  `tenantWhere()` con `orderBy(campo)` ni con desigualdades/rangos en otro campo
+  (exigiría índice compuesto que no está desplegado y la query falla con
+  failed-precondition). En su lugar: query solo con filtros de igualdad
+  (tenantId + otros ==) y ordenar/filtrar rangos EN MEMORIA tras mapear.
+  Paginación: `orderBy(documentId())` + `startAfter(idString)` (no requiere
+  compuesto). `firestore.indexes.json` queda listo para cuando el CI esté
+  activo; recién entonces se podrá volver a orderBy en servidor.
 - `stock_movements` es inmutable (auditoría): nunca update/delete.
 - Correlativos COT-/FAC- son por tenant (`getNextNumber()` usa count + tenantWhere).
 
@@ -71,6 +79,8 @@ Reglas:
   `@/core/domain/Pagination.ts` (`Page<T>`, `PageRequest`, máx 100/página).
 - Implementada en clients y maintenance_records (`getPage`). Replicar el patrón
   pageSize+1 → hasMore/nextCursor en nuevas listas grandes.
+- El cursor pagina por `documentId()` (ver política de índices arriba); el orden
+  de presentación se aplica en memoria por página.
 
 ## UI / Presentación
 

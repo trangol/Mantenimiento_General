@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp, getCountFromServer,
+  query, where, Timestamp, getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Quote, QuoteStatus } from '@/core/domain/Quote';
@@ -23,8 +23,11 @@ export class FirestoreQuoteRepository implements IQuoteRepository {
   private col = collection(db, 'quotes');
 
   async getAll(): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toQuote(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getById(id: string): Promise<Quote | null> {
@@ -37,13 +40,19 @@ export class FirestoreQuoteRepository implements IQuoteRepository {
   }
 
   async getByClient(clientId: string): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId)));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toQuote(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getByStatus(status: QuoteStatus): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), where('status', '==', status), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('status', '==', status)));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toQuote(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async create(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<Quote> {

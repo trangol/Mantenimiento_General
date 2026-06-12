@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp,
+  query, where, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Asset } from '@/core/domain/Asset';
@@ -80,9 +80,12 @@ export class FirestoreAssetRepository implements IAssetRepository {
 
   async getByClientId(clientId: string): Promise<Asset[]> {
     const snap = await getDocs(
-      query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('name'))
+      query(this.col, tenantWhere(), where('clientId', '==', clientId))
     );
-    return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
+    // Orden en memoria: evita índice compuesto (tenantId + name). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toDomain(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async getByType(type: Asset['type']): Promise<Asset[]> {

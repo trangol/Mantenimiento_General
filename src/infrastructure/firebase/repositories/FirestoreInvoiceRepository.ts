@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc,
-  query, where, orderBy, Timestamp, runTransaction, getCountFromServer,
+  query, where, Timestamp, runTransaction, getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Invoice, InvoiceStatus, Payment } from '@/core/domain/Invoice';
@@ -27,8 +27,11 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
   private col = collection(db, 'invoices');
 
   async getAll(): Promise<Invoice[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toInvoice(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getById(id: string): Promise<Invoice | null> {
@@ -41,8 +44,11 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
   }
 
   async getByClient(clientId: string): Promise<Invoice[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId)));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toInvoice(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getByStatus(status: InvoiceStatus): Promise<Invoice[]> {
@@ -51,14 +57,17 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
   }
 
   async getOverdue(): Promise<Invoice[]> {
-    const now = Timestamp.now();
+    // Filtro de dueDate en memoria: where de desigualdad + tenantWhere exige
+    // índice compuesto (tenantId + status + dueDate). Ver CLAUDE.md §Índices
+    const now = new Date();
     const snap = await getDocs(query(
       this.col,
       tenantWhere(),
-      where('status', 'in', ['pending', 'partial']),
-      where('dueDate', '<', now)
+      where('status', 'in', ['pending', 'partial'])
     ));
-    return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
+    return snap.docs
+      .map(d => toInvoice(d.id, d.data() as Record<string, unknown>))
+      .filter(inv => inv.dueDate < now);
   }
 
   async create(invoice: Omit<Invoice, 'id' | 'createdAt' | 'updatedAt'>): Promise<Invoice> {

@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp, runTransaction,
+  query, where, Timestamp, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { InventoryItem, StockMovement } from '@/core/domain/InventoryItem';
@@ -21,8 +21,11 @@ export class FirestoreInventoryRepository implements IInventoryRepository {
   private movCol = collection(db, 'stock_movements');
 
   async getAll(): Promise<InventoryItem[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('name')));
-    return snap.docs.map(d => toItem(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + name). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toItem(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async getById(id: string): Promise<InventoryItem | null> {
@@ -75,12 +78,15 @@ export class FirestoreInventoryRepository implements IInventoryRepository {
   }
 
   async getMovements(itemId: string): Promise<StockMovement[]> {
-    const snap = await getDocs(query(this.movCol, tenantWhere(), where('inventoryItemId', '==', itemId), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => ({
-      ...d.data(),
-      id: d.id,
-      createdAt: (d.data().createdAt as Timestamp).toDate(),
-    } as StockMovement));
+    const snap = await getDocs(query(this.movCol, tenantWhere(), where('inventoryItemId', '==', itemId)));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => ({
+        ...d.data(),
+        id: d.id,
+        createdAt: (d.data().createdAt as Timestamp).toDate(),
+      } as StockMovement))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async delete(id: string): Promise<void> {

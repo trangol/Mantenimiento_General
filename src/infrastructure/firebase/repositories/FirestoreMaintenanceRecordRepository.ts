@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocs, collection, query, where, orderBy, limit, startAfter, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, orderBy, limit, startAfter, setDoc, updateDoc, documentId, QueryConstraint, DocumentData } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { IMaintenanceRecordRepository } from '@/core/repositories/IMaintenanceRecordRepository';
 import { MaintenanceRecord, MaintenanceStatus } from '@/core/domain/MaintenanceRecord';
@@ -19,30 +19,31 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
   }
 
   /**
-   * Paginación cursor-based (startAfter + limit), ordenada por fecha
-   * programada descendente. Cursor opaco = id del último doc.
-   * NOTA: where(tenantId) + orderBy(scheduledDate) exige índice compuesto.
+   * Paginación cursor-based (startAfter + limit) por documentId():
+   * con filtros de igualdad NO requiere índice compuesto (a diferencia de
+   * orderBy(scheduledDate)). Cursor opaco = id del último doc, que se pasa
+   * directo a startAfter (sin getDoc previo). La página se ordena en memoria
+   * por scheduledDate desc solo para presentación; el orden GLOBAL ya no es
+   * por fecha. Ver CLAUDE.md §Índices
    */
   async getPage(request: PageRequest): Promise<Page<MaintenanceRecord>> {
     const pageSize = clampPageSize(request.pageSize);
     const col = collection(db, this.collectionName);
-    const constraints = [tenantWhere(), orderBy('scheduledDate', 'desc'), limit(pageSize + 1)];
+    const constraints: QueryConstraint[] = [tenantWhere(), orderBy(documentId()), limit(pageSize + 1)];
     if (request.cursor) {
-      // Recuperar el doc cursor para posicionar startAfter
-      const cursorSnap = await getDoc(doc(db, this.collectionName, request.cursor));
-      if (cursorSnap.exists()) {
-        constraints.splice(2, 0, startAfter(cursorSnap));
-      }
+      // startAfter acepta el id (string) directamente con orderBy(documentId())
+      constraints.splice(2, 0, startAfter(request.cursor));
     }
     const snap = await getDocs(query(col, ...constraints));
     const hasMore = snap.docs.length > pageSize;
     const docs = hasMore ? snap.docs.slice(0, pageSize) : snap.docs;
-    const items = docs.map(d => this.mapToDomain(d.data(), d.id));
-    return {
-      items,
-      hasMore,
-      nextCursor: hasMore && docs.length > 0 ? docs[docs.length - 1].id : null,
-    };
+    // nextCursor se calcula ANTES de reordenar (debe ser el último doc del orden de query)
+    const nextCursor = hasMore && docs.length > 0 ? docs[docs.length - 1].id : null;
+    // Orden en memoria (solo dentro de la página): evita índice compuesto (tenantId + scheduledDate)
+    const items = docs
+      .map(d => this.mapToDomain(d.data(), d.id))
+      .sort((a, b) => b.scheduledDate.getTime() - a.scheduledDate.getTime());
+    return { items, hasMore, nextCursor };
   }
 
   async getByAssetId(assetId: string): Promise<MaintenanceRecord[]> {
@@ -71,7 +72,7 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
 
   async update(id: string, record: Partial<MaintenanceRecord>): Promise<void> {
     const docRef = doc(db, this.collectionName, id);
-    await updateDoc(docRef, record as any);
+    await updateDoc(docRef, { ...record });
   }
 
   async updateStatus(id: string, status: MaintenanceStatus): Promise<void> {
@@ -80,7 +81,7 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
   }
 
   // Mappers para convertir entre Firestore y nuestro Domain purista
-  private mapToDomain(data: any, id: string): MaintenanceRecord {
+  private mapToDomain(data: DocumentData, id: string): MaintenanceRecord {
     return {
       id,
       assetId: data.assetId,
@@ -105,7 +106,8 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
   }
 
   private mapToFirestore(record: MaintenanceRecord): Record<string, unknown> {
-    const { id, ...data } = record;
+    const { id: _id, ...data } = record;
+    void _id; // id se excluye del documento (es la clave del doc)
     // Firestore no acepta undefined — limpiar campos opcionales
     return stripUndefined(data as unknown as Record<string, unknown>);
   }

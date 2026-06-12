@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp, arrayUnion, arrayRemove,
+  query, where, Timestamp, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Vehicle, Route, RouteStop, RecurringSchedule } from '@/core/domain/Vehicle';
@@ -59,8 +59,11 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
   // ── Vehicles ─────────────────────────────────────────────────────────────
 
   async getAll(): Promise<Vehicle[]> {
-    const snap = await getDocs(query(this.vCol, tenantWhere(), orderBy('plate')));
-    return snap.docs.map(d => mapVehicle(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.vCol, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + plate). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => mapVehicle(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.plate.localeCompare(b.plate));
   }
 
   async getById(id: string): Promise<Vehicle | null> {
@@ -86,17 +89,19 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
   // ── Routes ────────────────────────────────────────────────────────────────
 
   async getRoutes(date?: Date): Promise<Route[]> {
-    let q;
+    // Filtro de rango y orden en memoria: where de desigualdad u orderBy(date)
+    // junto a tenantWhere exigen índice compuesto (tenantId + date). Ver CLAUDE.md §Índices
+    const snap = await getDocs(query(this.rCol, tenantWhere()));
+    const routes = snap.docs.map(d => mapRoute(d.id, d.data() as Record<string, unknown>));
     if (date) {
       const d = new Date(date);
-      const start = Timestamp.fromDate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0));
-      const end   = Timestamp.fromDate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59));
-      q = query(this.rCol, tenantWhere(), where('date', '>=', start), where('date', '<=', end), orderBy('date'));
-    } else {
-      q = query(this.rCol, tenantWhere(), orderBy('date', 'desc'));
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+      const end   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+      return routes
+        .filter(r => r.date >= start && r.date <= end)
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
     }
-    const snap = await getDocs(q);
-    return snap.docs.map(d => mapRoute(d.id, d.data() as Record<string, unknown>));
+    return routes.sort((a, b) => b.date.getTime() - a.date.getTime());
   }
 
   async getRouteById(id: string): Promise<Route | null> {
@@ -174,10 +179,13 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
     } else if (vehicleId) {
       q = query(this.sCol, tenantWhere(), where('vehicleId', '==', vehicleId), where('isActive', '==', true));
     } else {
-      q = query(this.sCol, tenantWhere(), where('isActive', '==', true), orderBy('clientName'));
+      q = query(this.sCol, tenantWhere(), where('isActive', '==', true));
     }
     const snap = await getDocs(q);
-    return snap.docs.map(d => mapSchedule(d.id, d.data() as Record<string, unknown>));
+    // Orden en memoria: evita índice compuesto (tenantId + clientName). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => mapSchedule(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.clientName.localeCompare(b.clientName));
   }
 
   async createSchedule(schedule: Omit<RecurringSchedule, 'id' | 'createdAt' | 'updatedAt'>): Promise<RecurringSchedule> {

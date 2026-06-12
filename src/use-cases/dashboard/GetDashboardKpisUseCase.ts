@@ -5,9 +5,9 @@
  * DIP: depende de las interfaces de repositorio, no de Firestore.
  *
  * Estrategia de lectura: los mantenimientos se obtienen vía getPage
- * (cursor-based, orderBy scheduledDate desc) paginando hasta cubrir el mes
- * actual más una ventana de retrovisión para detectar atrasados, con un
- * tope de páginas para acotar lecturas.
+ * (cursor-based por documentId, sin orden global por fecha — evita índice
+ * compuesto). Se recorren páginas hasta agotar datos o el tope MAX_PAGES,
+ * y el filtrado por ventana de fechas se hace en memoria.
  */
 
 import { MaintenanceRecord } from '@/core/domain/MaintenanceRecord';
@@ -120,8 +120,10 @@ export class GetDashboardKpisUseCase {
   }
 
   /**
-   * Pagina getPage (desc por scheduledDate) hasta encontrar registros
-   * anteriores a `floor` o agotar el tope de páginas.
+   * Pagina getPage (orden por documentId, NO por fecha) hasta agotar datos o
+   * el tope de páginas. Sin orden global por fecha ya no se puede cortar al
+   * pasar `floor`: el filtro de ventana se aplica en memoria y el resultado
+   * se ordena por scheduledDate desc para los consumidores (recientes, etc.).
    */
   private async fetchRecordsSince(floor: Date): Promise<MaintenanceRecord[]> {
     const all: MaintenanceRecord[] = [];
@@ -129,10 +131,11 @@ export class GetDashboardKpisUseCase {
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await this.maintenanceRepo.getPage({ pageSize: 100, cursor });
       all.push(...result.items);
-      const oldest = result.items[result.items.length - 1];
-      if (!result.hasMore || !result.nextCursor || (oldest && oldest.scheduledDate < floor)) break;
+      if (!result.hasMore || !result.nextCursor) break;
       cursor = result.nextCursor;
     }
-    return all;
+    return all
+      .filter(r => r.scheduledDate >= floor)
+      .sort((a, b) => b.scheduledDate.getTime() - a.scheduledDate.getTime());
   }
 }

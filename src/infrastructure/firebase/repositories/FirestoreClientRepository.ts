@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, startAfter, Timestamp,
+  query, where, orderBy, limit, startAfter, Timestamp, documentId, QueryConstraint,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Client } from '@/core/domain/Client';
@@ -66,8 +66,11 @@ export class FirestoreClientRepository implements IClientRepository {
   }
 
   async getAll(): Promise<Client[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('businessName')));
-    return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + businessName). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toDomain(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.businessName.localeCompare(b.businessName));
   }
 
   async getByRut(rut: string): Promise<Client | null> {
@@ -89,28 +92,30 @@ export class FirestoreClientRepository implements IClientRepository {
   }
 
   /**
-   * Paginación cursor-based (buena práctica Firestore: startAfter + limit).
-   * Cursor opaco = id del último documento de la página anterior.
+   * Paginación cursor-based (startAfter + limit) por documentId():
+   * con filtros de igualdad NO requiere índice compuesto (a diferencia de
+   * orderBy(businessName)). Cursor opaco = id del último doc, que se pasa
+   * directo a startAfter (sin getDoc previo). La página se ordena en memoria
+   * por businessName solo para presentación; el orden GLOBAL ya no es
+   * alfabético. Ver CLAUDE.md §Índices
    */
   async getPage(request: PageRequest): Promise<Page<Client>> {
     const pageSize = clampPageSize(request.pageSize);
-    const constraints = [tenantWhere(), orderBy('businessName'), limit(pageSize + 1)];
+    const constraints: QueryConstraint[] = [tenantWhere(), orderBy(documentId()), limit(pageSize + 1)];
     if (request.cursor) {
-      // Recuperar el doc cursor para posicionar startAfter
-      const cursorSnap = await getDoc(doc(this.col, request.cursor));
-      if (cursorSnap.exists()) {
-        constraints.splice(2, 0, startAfter(cursorSnap));
-      }
+      // startAfter acepta el id (string) directamente con orderBy(documentId())
+      constraints.splice(2, 0, startAfter(request.cursor));
     }
     const snap = await getDocs(query(this.col, ...constraints));
     const hasMore = snap.docs.length > pageSize;
     const docs = hasMore ? snap.docs.slice(0, pageSize) : snap.docs;
-    const items = docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
-    return {
-      items,
-      hasMore,
-      nextCursor: hasMore && docs.length > 0 ? docs[docs.length - 1].id : null,
-    };
+    // nextCursor se calcula ANTES de reordenar (debe ser el último doc del orden de query)
+    const nextCursor = hasMore && docs.length > 0 ? docs[docs.length - 1].id : null;
+    // Orden en memoria (solo dentro de la página): evita índice compuesto (tenantId + businessName)
+    const items = docs
+      .map(d => toDomain(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => a.businessName.localeCompare(b.businessName));
+    return { items, hasMore, nextCursor };
   }
 
   async update(id: string, partial: Partial<Client>): Promise<void> {

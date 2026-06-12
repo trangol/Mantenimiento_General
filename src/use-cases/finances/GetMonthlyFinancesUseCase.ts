@@ -3,8 +3,9 @@
  * facturación, cobranza, saldos, facturas vencidas y rendimiento por técnico.
  *
  * Cruza facturas (emitidas en el mes) con mantenimientos completados del mes.
- * Los mantenimientos se recorren con paginación cursor-based (scheduledDate desc)
- * y se corta el recorrido al pasar el inicio del mes consultado.
+ * Los mantenimientos se recorren con paginación cursor-based por documentId
+ * (sin orden global por fecha — evita índice compuesto) y se filtra por fecha
+ * en memoria, con tope de páginas como protección.
  */
 
 import { IInvoiceRepository } from '@/core/repositories/IInvoiceRepository';
@@ -83,7 +84,11 @@ export class GetMonthlyFinancesUseCase {
     return { totalFacturado, totalCobrado, totalPendiente, facturasVencidas, porTecnico };
   }
 
-  /** Recorre páginas (scheduledDate desc) hasta cubrir el mes consultado */
+  /**
+   * Recorre páginas (orden por documentId, NO por fecha) filtrando en memoria.
+   * Sin orden global por fecha ya no se puede cortar al pasar el inicio del
+   * mes: se recorren todas las páginas hasta agotar datos o el tope MAX_PAGES.
+   */
   private async getCompletedRecordsOfMonth(start: Date, end: Date): Promise<MaintenanceRecord[]> {
     const result: MaintenanceRecord[] = [];
     let cursor: string | null = null;
@@ -95,9 +100,7 @@ export class GetMonthlyFinancesUseCase {
           result.push(record);
         }
       }
-      // Orden desc por scheduledDate: si la última OT ya es anterior al mes, cortar
-      const last = page.items[page.items.length - 1];
-      if (!page.hasMore || !page.nextCursor || (last && last.scheduledDate < start)) break;
+      if (!page.hasMore || !page.nextCursor) break;
       cursor = page.nextCursor;
     }
     return result;

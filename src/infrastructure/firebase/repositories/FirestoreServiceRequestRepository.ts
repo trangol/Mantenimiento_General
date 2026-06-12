@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc,
-  query, where, orderBy, Timestamp,
+  query, where, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { ServiceRequest, ServiceRequestStatus } from '@/core/domain/ServiceRequest';
@@ -30,8 +30,11 @@ export class FirestoreServiceRequestRepository implements IServiceRequestReposit
   }
 
   async getAll(): Promise<ServiceRequest[]> {
-    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('createdAt', 'desc')));
-    return snap.docs.map(d => toServiceRequest(d.id, d.data() as Record<string, unknown>));
+    const snap = await getDocs(query(this.col, tenantWhere()));
+    // Orden en memoria: evita índice compuesto (tenantId + createdAt). Ver CLAUDE.md §Índices
+    return snap.docs
+      .map(d => toServiceRequest(d.id, d.data() as Record<string, unknown>))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getByClient(clientId: string): Promise<ServiceRequest[]> {

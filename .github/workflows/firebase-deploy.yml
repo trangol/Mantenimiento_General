@@ -1,0 +1,42 @@
+# Despliega reglas e índices de Firestore en cada push a main que los modifique.
+# El usuario NO tiene Firebase CLI local: este workflow es la única vía de deploy
+# de reglas/índices (ver CLAUDE.md §Seguridad y base de datos).
+#
+# REQUISITO (una sola vez): crear el secret FIREBASE_SERVICE_ACCOUNT en GitHub
+#   (Settings → Secrets and variables → Actions → New repository secret)
+#   con el JSON de una cuenta de servicio de Firebase:
+#   Consola Firebase → ⚙️ Configuración del proyecto → Cuentas de servicio
+#   → Generar nueva clave privada (rol: Firebase Admin / Cloud Datastore Owner).
+name: Deploy Firestore rules & indexes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'firebase.json'
+      - '.github/workflows/firebase-deploy.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Escribir credenciales de service account
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/firebase-sa.json"
+
+      - name: Deploy rules + indexes
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+        run: |
+          npx firebase-tools@latest deploy \
+            --only firestore:rules,firestore:indexes \
+            --project "${{ secrets.FIREBASE_PROJECT_ID }}" \
+            --non-interactive
