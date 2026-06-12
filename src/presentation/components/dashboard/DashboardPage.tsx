@@ -1,50 +1,79 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  StatCard, Card, SectionHeader, StatusBadge, ProgressBar, Badge,
+  StatCard, Card, SectionHeader, StatusBadge, EmptyState,
 } from '@/presentation/components/ui';
+import { repositories } from '@/infrastructure/firebase/RepositoryFactory';
+import { GetDashboardKpisUseCase, DashboardKpis } from '@/use-cases/dashboard/GetDashboardKpisUseCase';
 
-// ─── Datos Mock ────────────────────────────────────────────────────────────────
-const kpis = [
-  { label: 'Clientes Activos',  value: 300,    icon: '🏢', color: 'blue'   as const, trend: { value: '+12 este mes', up: true  } },
-  { label: 'OTs Hoy',           value: 47,     icon: '🔧', color: 'cyan'   as const, trend: { value: '8 en progreso', up: true } },
-  { label: 'Ingresos del Mes',  value: '$4.2M',icon: '💰', color: 'green'  as const, trend: { value: '+18% vs anterior', up: true } },
-  { label: 'Cobros Pendientes', value: '$820K',icon: '⚠️', color: 'yellow' as const, trend: { value: '23 facturas', up: false  } },
-];
+// ─── Use case instanciado a nivel de módulo (DIP) ────────────────────────────
+const getDashboardKpisUC = new GetDashboardKpisUseCase(
+  repositories.maintenance,
+  repositories.clients,
+  repositories.inventory,
+);
 
-const recentOTs = [
-  { id: 'OT-2841', client: 'Club de Campo Las Araucarias', asset: 'Piscina Olímpica',  technician: 'Juan Pérez',    status: 'in_progress' as const, time: '08:45', cost: '$24.000' },
-  { id: 'OT-2840', client: 'Condominio Los Pinos',         asset: 'Piscina Temperada', technician: 'Carlos Muñoz', status: 'completed'   as const, time: '09:10', cost: '$18.500' },
-  { id: 'OT-2839', client: 'Hotel Costanera',              asset: 'Piscina Principal',  technician: 'Pedro Soto',   status: 'completed'   as const, time: '07:30', cost: '$31.000' },
-  { id: 'OT-2838', client: 'Residencial El Bosque',        asset: 'Piscina Infantil',   technician: 'Miguel Torres',status: 'pending'     as const, time: '11:00', cost: '—' },
-  { id: 'OT-2837', client: 'Centro Deportivo Malloco',     asset: 'Piscina Semi-Olímp', technician: 'Juan Pérez',   status: 'pending'     as const, time: '12:30', cost: '—' },
-];
+// ─── Helpers de formato ───────────────────────────────────────────────────────
+const CLP = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
 
-const technicianPerf = [
-  { name: 'Juan Pérez',    otsHoy: 4, completadas: 2, avg: 82  },
-  { name: 'Carlos Muñoz',  otsHoy: 5, completadas: 5, avg: 100 },
-  { name: 'Pedro Soto',    otsHoy: 4, completadas: 4, avg: 100 },
-  { name: 'Miguel Torres', otsHoy: 5, completadas: 1, avg: 20  },
-  { name: 'Roberto Díaz',  otsHoy: 4, completadas: 3, avg: 75  },
-];
+function formatDuration(minutes: number | null): string {
+  if (minutes === null) return '—';
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
 
-const vehicles = [
-  { plate: 'HJKL-52', driver: 'Juan Pérez',    ots: 4, status: 'active'  },
-  { plate: 'MNPQ-71', driver: 'Carlos Muñoz',  ots: 5, status: 'active'  },
-  { plate: 'RSTU-33', driver: 'Pedro Soto',    ots: 4, status: 'active'  },
-  { plate: 'ABCD-90', driver: 'Miguel Torres', ots: 5, status: 'warning' },
-];
+function formatDate(d: Date): string {
+  return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' });
+}
 
-const alerts = [
-  { icon: '💳', title: 'Cobros vencidos',          desc: '7 clientes con facturas >30 días',       color: 'var(--danger-500)'  },
-  { icon: '📦', title: 'Stock bajo',                desc: 'Cloro granulado: 3 unidades restantes', color: 'var(--warning-500)' },
-  { icon: '🔧', title: 'Mantención atrasada',       desc: '4 activos sin visita en +30 días',      color: 'var(--warning-500)' },
-  { icon: '📋', title: 'Cotizaciones sin respuesta',desc: '6 cotizaciones emitidas sin cierre',    color: 'var(--brand-400)'   },
-];
+function initials(name?: string): string {
+  if (!name) return '?';
+  return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+}
 
-// ─── Componente Principal ──────────────────────────────────────────────────────
+// ─── Skeleton de carga ────────────────────────────────────────────────────────
+function LoadingSkeleton() {
+  return (
+    <div>
+      <div className="grid-4" style={{ marginBottom: '20px' }}>
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} style={{
+            height: '96px', background: 'var(--bg-surface)',
+            borderRadius: 'var(--radius-md)', opacity: 1 - i * 0.12,
+          }} />
+        ))}
+      </div>
+      {[1, 2].map(i => (
+        <div key={i} style={{
+          height: '180px', background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-md)', marginBottom: '16px', opacity: 0.6,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Componente Principal ─────────────────────────────────────────────────────
 export function DashboardPage() {
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDashboardKpisUC.execute()
+      .then(data => { if (!cancelled) setKpis(data); })
+      .catch(err => {
+        console.error('Error cargando KPIs del dashboard:', err);
+        if (!cancelled) setError('No se pudieron cargar los indicadores. Intenta nuevamente.');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   const today = new Date().toLocaleDateString('es-CL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
@@ -58,166 +87,228 @@ export function DashboardPage() {
           <h1 className="page-title">Dashboard</h1>
           <p className="page-desc" style={{ textTransform: 'capitalize' }}>{today}</p>
         </div>
-        <div className="page-header-actions">
-          <button className="btn btn-secondary btn-sm">📤 Exportar</button>
-          <button className="btn btn-primary btn-sm">+ Nueva OT</button>
-        </div>
       </div>
 
-      {/* KPIs — 4 cols desktop, 2 tablet, 2 mobile (1 en muy pequeños) */}
-      <div className="grid-4 stagger" style={{ marginBottom: '20px' }}>
-        {kpis.map((kpi) => (
-          <StatCard key={kpi.label} {...kpi} />
-        ))}
-      </div>
+      {loading && <LoadingSkeleton />}
 
-      {/* Fila principal: OTs + Rendimiento */}
-      <div className="dash-main-grid" style={{ marginBottom: '16px' }}>
-
-        {/* OTs Recientes */}
-        <Card className="animate-fade-up">
-          <SectionHeader
-            title="Órdenes de Trabajo — Hoy"
-            subtitle="Vista en tiempo real de las OTs activas"
-            action={<button className="btn btn-ghost btn-sm">Ver todas →</button>}
-          />
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>OT</th>
-                  <th>Cliente / Activo</th>
-                  <th className="table-hide-sm">Técnico</th>
-                  <th className="table-hide-sm">Hora</th>
-                  <th>Estado</th>
-                  <th className="table-hide-sm">Costo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentOTs.map((ot) => (
-                  <tr key={ot.id} style={{ cursor: 'pointer' }}>
-                    <td>
-                      <span className="font-mono text-sm" style={{ color: 'var(--brand-400)' }}>
-                        {ot.id}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 500, fontSize: '13px' }}>{ot.client}</div>
-                      <div className="text-xs text-secondary">{ot.asset}</div>
-                    </td>
-                    <td className="table-hide-sm">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div className="avatar avatar-sm">
-                          {ot.technician.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <span className="text-sm">{ot.technician}</span>
-                      </div>
-                    </td>
-                    <td className="text-sm text-secondary table-hide-sm">{ot.time}</td>
-                    <td><StatusBadge status={ot.status} /></td>
-                    <td className="font-semibold table-hide-sm">{ot.cost}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {!loading && error && (
+        <Card>
+          <EmptyState icon="⚠️" title="Error al cargar" description={error} />
         </Card>
+      )}
 
-        {/* Rendimiento Técnicos */}
-        <Card className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <SectionHeader
-            title="Rendimiento Técnicos"
-            subtitle="OTs completadas hoy"
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {technicianPerf.map((tech) => (
-              <div key={tech.name}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div className="avatar avatar-sm">
-                      {tech.name.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{tech.name}</span>
-                  </div>
-                  <span className="text-sm text-secondary">{tech.completadas}/{tech.otsHoy}</span>
-                </div>
-                <ProgressBar
-                  value={tech.avg}
-                  color={tech.avg === 100 ? 'var(--success-500)' : tech.avg < 50 ? 'var(--warning-500)' : 'var(--gradient-brand)'}
-                  showLabel
+      {!loading && !error && kpis && (
+        <>
+          {/* KPIs */}
+          <div className="grid-4 stagger" style={{ marginBottom: '20px' }}>
+            <StatCard
+              label="Mantenimientos del Mes"
+              value={`${kpis.monthCompleted}/${kpis.monthTotal}`}
+              icon="🔧"
+              color="blue"
+              trend={{ value: 'completados / programados', up: kpis.monthCompleted > 0 }}
+            />
+            <StatCard
+              label="Clientes Activos"
+              value={kpis.activeClients}
+              icon="🏢"
+              color="cyan"
+            />
+            <StatCard
+              label="Ingresos del Mes"
+              value={CLP.format(kpis.monthRevenue)}
+              icon="💰"
+              color="green"
+              trend={{ value: 'servicios completados', up: kpis.monthRevenue > 0 }}
+            />
+            <StatCard
+              label="Tasa de Cumplimiento"
+              value={`${kpis.complianceRate}%`}
+              icon="📈"
+              color={kpis.complianceRate >= 80 ? 'green' : kpis.complianceRate >= 50 ? 'yellow' : 'red'}
+            />
+          </div>
+
+          {/* Fila principal: Recientes + Rendimiento */}
+          <div className="dash-main-grid" style={{ marginBottom: '16px' }}>
+
+            {/* Mantenimientos Recientes */}
+            <Card className="animate-fade-up">
+              <SectionHeader
+                title="Mantenimientos Recientes"
+                subtitle="Últimos 10 servicios registrados"
+              />
+              {kpis.recentMaintenances.length === 0 ? (
+                <EmptyState
+                  icon="📋"
+                  title="Sin mantenimientos"
+                  description="Aún no hay mantenimientos registrados. Crea la primera orden de trabajo desde el módulo Mantenciones."
                 />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Segunda fila: Flota + Alertas */}
-      <div className="dash-second-grid">
-
-        {/* Flota de Vehículos */}
-        <Card className="animate-fade-up">
-          <SectionHeader
-            title="Flota en Terreno"
-            subtitle="8 vehículos desplegados"
-            action={<button className="btn btn-ghost btn-sm">Logística →</button>}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {vehicles.map((v) => (
-              <div key={v.plate} style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                padding: '10px 12px',
-                background: 'var(--bg-surface)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--bg-border)',
-              }}>
-                <span style={{ fontSize: '20px' }}>🚐</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span className="font-mono font-semibold" style={{ fontSize: '13px' }}>{v.plate}</span>
-                    <Badge color={v.status === 'active' ? 'green' : 'yellow'}>
-                      {v.status === 'active' ? 'Activo' : 'Atención'}
-                    </Badge>
-                  </div>
-                  <div className="text-sm text-secondary">{v.driver}</div>
+              ) : (
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cliente / Activo</th>
+                        <th className="table-hide-sm">Técnico</th>
+                        <th className="table-hide-sm">Fecha</th>
+                        <th>Estado</th>
+                        <th className="table-hide-sm">Costo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpis.recentMaintenances.map((m) => (
+                        <tr key={m.id}>
+                          <td>
+                            <div style={{ fontWeight: 500, fontSize: '13px' }}>{m.clientName || m.clientId}</div>
+                            <div className="text-xs text-secondary">{m.assetName || m.assetId}</div>
+                          </td>
+                          <td className="table-hide-sm">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div className="avatar avatar-sm">{initials(m.technicianName)}</div>
+                              <span className="text-sm">{m.technicianName || '—'}</span>
+                            </div>
+                          </td>
+                          <td className="text-sm text-secondary table-hide-sm">{formatDate(m.scheduledDate)}</td>
+                          <td><StatusBadge status={m.status} /></td>
+                          <td className="font-semibold table-hide-sm">
+                            {m.status === 'completed' ? CLP.format(m.totalCost || 0) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div className="font-semibold" style={{ fontSize: '18px' }}>{v.ots}</div>
-                  <div className="text-xs text-muted">OTs hoy</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+              )}
+            </Card>
 
-        {/* Alertas del Sistema */}
-        <Card className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <SectionHeader
-            title="Alertas del Sistema"
-            subtitle="Requieren atención inmediata"
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {alerts.map((alert) => (
-              <div key={alert.title} style={{
-                display: 'flex', gap: '12px', padding: '12px',
-                background: 'var(--bg-surface)',
-                borderRadius: 'var(--radius-sm)',
-                border: `1px solid ${alert.color}28`,
-                cursor: 'pointer',
-                transition: 'border-color var(--transition-fast)',
-              }}>
-                <span style={{ fontSize: '20px', flexShrink: 0 }}>{alert.icon}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: alert.color }}>
-                    {alert.title}
-                  </div>
-                  <div className="text-xs text-secondary">{alert.desc}</div>
+            {/* Rendimiento por Técnico */}
+            <Card className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+              <SectionHeader
+                title="Rendimiento Técnicos"
+                subtitle="Servicios completados este mes"
+              />
+              {kpis.technicianPerformance.length === 0 ? (
+                <EmptyState
+                  icon="👷"
+                  title="Sin servicios completados"
+                  description="Cuando los técnicos completen mantenimientos este mes, verás su rendimiento aquí."
+                />
+              ) : (
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Técnico</th>
+                        <th>OTs</th>
+                        <th>T. Prom.</th>
+                        <th className="table-hide-sm">Generado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpis.technicianPerformance.map((t) => (
+                        <tr key={t.technicianId}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div className="avatar avatar-sm">{initials(t.technicianName)}</div>
+                              <span className="text-sm" style={{ fontWeight: 500 }}>{t.technicianName}</span>
+                            </div>
+                          </td>
+                          <td className="font-semibold">{t.completedCount}</td>
+                          <td className="text-sm text-secondary">{formatDuration(t.avgServiceMinutes)}</td>
+                          <td className="font-semibold table-hide-sm">{CLP.format(t.totalRevenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            ))}
+              )}
+            </Card>
           </div>
-        </Card>
-      </div>
+
+          {/* Segunda fila: Alertas */}
+          <div className="dash-second-grid">
+
+            {/* Stock bajo */}
+            <Card className="animate-fade-up">
+              <SectionHeader
+                title="Insumos con Stock Bajo"
+                subtitle="Bajo el stock mínimo definido"
+              />
+              {kpis.lowStockItems.length === 0 ? (
+                <EmptyState
+                  icon="📦"
+                  title="Inventario saludable"
+                  description="No hay insumos bajo el stock mínimo."
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {kpis.lowStockItems.map((item) => (
+                    <div key={item.id} style={{
+                      display: 'flex', gap: '12px', padding: '12px', alignItems: 'center',
+                      background: 'var(--bg-surface)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--bg-border)',
+                    }}>
+                      <span style={{ fontSize: '20px', flexShrink: 0 }}>📦</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--warning-500)' }}>
+                          {item.name}
+                        </div>
+                        <div className="text-xs text-secondary">
+                          Stock: {item.currentStock} {item.unit} · Mínimo: {item.minimumStock} {item.unit}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Mantenimientos vencidos */}
+            <Card className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+              <SectionHeader
+                title="Mantenimientos Vencidos"
+                subtitle="Programados y aún no completados"
+              />
+              {kpis.overdueMaintenances.length === 0 ? (
+                <EmptyState
+                  icon="✅"
+                  title="Todo al día"
+                  description="No hay mantenimientos vencidos pendientes."
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {kpis.overdueMaintenances.slice(0, 8).map((m) => (
+                    <div key={m.id} style={{
+                      display: 'flex', gap: '12px', padding: '12px', alignItems: 'center',
+                      background: 'var(--bg-surface)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--bg-border)',
+                    }}>
+                      <span style={{ fontSize: '20px', flexShrink: 0 }}>⏰</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--danger-500)' }}>
+                          {m.clientName || m.clientId} — {m.assetName || m.assetId}
+                        </div>
+                        <div className="text-xs text-secondary">
+                          Programado: {m.scheduledDate.toLocaleDateString('es-CL')} · {m.technicianName || 'Sin técnico'}
+                        </div>
+                      </div>
+                      <StatusBadge status={m.status} />
+                    </div>
+                  ))}
+                  {kpis.overdueMaintenances.length > 8 && (
+                    <div className="text-xs text-secondary" style={{ textAlign: 'center', padding: '4px' }}>
+                      +{kpis.overdueMaintenances.length - 8} más vencidos
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }

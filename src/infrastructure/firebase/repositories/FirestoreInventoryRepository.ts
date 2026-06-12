@@ -5,6 +5,7 @@ import {
 import { db } from '../firebaseConfig';
 import { InventoryItem, StockMovement } from '@/core/domain/InventoryItem';
 import { IInventoryRepository } from '@/core/repositories/IInventoryRepository';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 function toItem(id: string, data: Record<string, unknown>): InventoryItem {
   return {
@@ -20,17 +21,21 @@ export class FirestoreInventoryRepository implements IInventoryRepository {
   private movCol = collection(db, 'stock_movements');
 
   async getAll(): Promise<InventoryItem[]> {
-    const snap = await getDocs(query(this.col, orderBy('name')));
+    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('name')));
     return snap.docs.map(d => toItem(d.id, d.data() as Record<string, unknown>));
   }
 
   async getById(id: string): Promise<InventoryItem | null> {
     const snap = await getDoc(doc(this.col, id));
-    return snap.exists() ? toItem(snap.id, snap.data() as Record<string, unknown>) : null;
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return toItem(snap.id, data);
   }
 
   async getBySku(sku: string): Promise<InventoryItem | null> {
-    const snap = await getDocs(query(this.col, where('sku', '==', sku)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('sku', '==', sku)));
     if (snap.empty) return null;
     const d = snap.docs[0];
     return toItem(d.id, d.data() as Record<string, unknown>);
@@ -43,7 +48,7 @@ export class FirestoreInventoryRepository implements IInventoryRepository {
 
   async create(item: Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<InventoryItem> {
     const now = Timestamp.now();
-    const ref = await addDoc(this.col, { ...item, createdAt: now, updatedAt: now });
+    const ref = await addDoc(this.col, stampTenant(stripUndefined({ ...item, createdAt: now, updatedAt: now })));
     return { ...item, id: ref.id, createdAt: now.toDate(), updatedAt: now.toDate() };
   }
 
@@ -65,12 +70,12 @@ export class FirestoreInventoryRepository implements IInventoryRepository {
       tx.update(itemRef, { currentStock: newStock, updatedAt: Timestamp.now() });
       // Registrar movimiento
       const movRef = doc(this.movCol);
-      tx.set(movRef, { ...movement, inventoryItemId: id, createdAt: Timestamp.now() });
+      tx.set(movRef, stampTenant(stripUndefined({ ...movement, inventoryItemId: id, createdAt: Timestamp.now() })));
     });
   }
 
   async getMovements(itemId: string): Promise<StockMovement[]> {
-    const snap = await getDocs(query(this.movCol, where('inventoryItemId', '==', itemId), orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.movCol, tenantWhere(), where('inventoryItemId', '==', itemId), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => ({
       ...d.data(),
       id: d.id,

@@ -1,0 +1,49 @@
+{
+  "indexes": [
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "businessName", "order": "ASCENDING" } ] },
+    { "collectionGroup": "clients", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "serviceType", "order": "ASCENDING" } ] },
+    { "collectionGroup": "maintenance_records", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "scheduledDate", "order": "DESCENDING" } ] },
+    { "collectionGroup": "maintenance_records", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "status", "order": "ASCENDING" },
+      { "fieldPath": "scheduledDate", "order": "DESCENDING" } ] },
+    { "collectionGroup": "maintenance_records", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "technicianId", "order": "ASCENDING" },
+      { "fieldPath": "scheduledDate", "order": "DESCENDING" } ] },
+    { "collectionGroup": "inventory", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "name", "order": "ASCENDING" } ] },
+    { "collectionGroup": "stock_movements", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "quotes", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "quotes", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "status", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "invoices", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "invoices", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "status", "order": "ASCENDING" },
+      { "fieldPath": "dueDate", "order": "ASCENDING" } ] },
+    { "collectionGroup": "invoices", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "clientId", "order": "ASCENDING" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "routes", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "tenantId", "order": "ASCENDING" },
+      { "fieldPath": "date", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

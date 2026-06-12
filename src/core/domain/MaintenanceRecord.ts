@@ -9,6 +9,7 @@ export interface SupplyUsage {
 
 export interface MaintenanceRecord {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   assetId: string;
   assetName?: string; // Desnormalizado para la UI
   technicianId: string;

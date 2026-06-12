@@ -5,6 +5,7 @@ import {
 import { db } from '../firebaseConfig';
 import { Vehicle, Route, RouteStop, RecurringSchedule } from '@/core/domain/Vehicle';
 import { IVehicleRepository } from '@/core/repositories/IVehicleRepository';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,18 +59,22 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
   // ── Vehicles ─────────────────────────────────────────────────────────────
 
   async getAll(): Promise<Vehicle[]> {
-    const snap = await getDocs(query(this.vCol, orderBy('plate')));
+    const snap = await getDocs(query(this.vCol, tenantWhere(), orderBy('plate')));
     return snap.docs.map(d => mapVehicle(d.id, d.data() as Record<string, unknown>));
   }
 
   async getById(id: string): Promise<Vehicle | null> {
     const snap = await getDoc(doc(this.vCol, id));
-    return snap.exists() ? mapVehicle(snap.id, snap.data() as Record<string, unknown>) : null;
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return mapVehicle(snap.id, data);
   }
 
   async create(v: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'>): Promise<Vehicle> {
     const now = Timestamp.now();
-    const ref = await addDoc(this.vCol, { ...v, createdAt: now, updatedAt: now });
+    const ref = await addDoc(this.vCol, stampTenant(stripUndefined({ ...v, createdAt: now, updatedAt: now })));
     return mapVehicle(ref.id, { ...v, createdAt: now, updatedAt: now });
   }
 
@@ -86,9 +91,9 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
       const d = new Date(date);
       const start = Timestamp.fromDate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0));
       const end   = Timestamp.fromDate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59));
-      q = query(this.rCol, where('date', '>=', start), where('date', '<=', end), orderBy('date'));
+      q = query(this.rCol, tenantWhere(), where('date', '>=', start), where('date', '<=', end), orderBy('date'));
     } else {
-      q = query(this.rCol, orderBy('date', 'desc'));
+      q = query(this.rCol, tenantWhere(), orderBy('date', 'desc'));
     }
     const snap = await getDocs(q);
     return snap.docs.map(d => mapRoute(d.id, d.data() as Record<string, unknown>));
@@ -96,12 +101,16 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
 
   async getRouteById(id: string): Promise<Route | null> {
     const snap = await getDoc(doc(this.rCol, id));
-    return snap.exists() ? mapRoute(snap.id, snap.data() as Record<string, unknown>) : null;
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return mapRoute(snap.id, data);
   }
 
   async createRoute(route: Omit<Route, 'id' | 'createdAt' | 'updatedAt'>): Promise<Route> {
     const now = Timestamp.now();
-    const payload = { ...route, date: Timestamp.fromDate(route.date), createdAt: now, updatedAt: now };
+    const payload = stampTenant(stripUndefined({ ...route, date: Timestamp.fromDate(route.date), createdAt: now, updatedAt: now }));
     const ref = await addDoc(this.rCol, payload);
     return mapRoute(ref.id, { ...payload });
   }
@@ -161,11 +170,11 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
   async getSchedules(clientId?: string, vehicleId?: string): Promise<RecurringSchedule[]> {
     let q;
     if (clientId) {
-      q = query(this.sCol, where('clientId', '==', clientId), where('isActive', '==', true));
+      q = query(this.sCol, tenantWhere(), where('clientId', '==', clientId), where('isActive', '==', true));
     } else if (vehicleId) {
-      q = query(this.sCol, where('vehicleId', '==', vehicleId), where('isActive', '==', true));
+      q = query(this.sCol, tenantWhere(), where('vehicleId', '==', vehicleId), where('isActive', '==', true));
     } else {
-      q = query(this.sCol, where('isActive', '==', true), orderBy('clientName'));
+      q = query(this.sCol, tenantWhere(), where('isActive', '==', true), orderBy('clientName'));
     }
     const snap = await getDocs(q);
     return snap.docs.map(d => mapSchedule(d.id, d.data() as Record<string, unknown>));
@@ -173,7 +182,7 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
 
   async createSchedule(schedule: Omit<RecurringSchedule, 'id' | 'createdAt' | 'updatedAt'>): Promise<RecurringSchedule> {
     const now = Timestamp.now();
-    const ref = await addDoc(this.sCol, { ...schedule, createdAt: now, updatedAt: now });
+    const ref = await addDoc(this.sCol, stampTenant(stripUndefined({ ...schedule, createdAt: now, updatedAt: now })));
     return mapSchedule(ref.id, { ...schedule, createdAt: now, updatedAt: now });
   }
 
@@ -192,7 +201,7 @@ export class FirestoreVehicleRepository implements IVehicleRepository {
   async generateRoutesFromSchedules(date: Date): Promise<Route[]> {
     const dayOfWeek = date.getDay();
     const snap = await getDocs(
-      query(this.sCol, where('isActive', '==', true), where('daysOfWeek', 'array-contains', dayOfWeek))
+      query(this.sCol, tenantWhere(), where('isActive', '==', true), where('daysOfWeek', 'array-contains', dayOfWeek))
     );
     if (snap.empty) return [];
 

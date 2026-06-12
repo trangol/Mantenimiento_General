@@ -2,6 +2,7 @@ export type VehicleStatus = 'active' | 'maintenance' | 'inactive';
 
 export interface Vehicle {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   plate: string; // Patente
   brand: string;
   model: string;
@@ -25,6 +26,7 @@ export type FrequencyType = 'weekly' | 'biweekly' | 'monthly' | 'custom';
 
 export interface RecurringSchedule {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   clientId: string;
   clientName: string;
   assetId?: string;
@@ -75,6 +77,7 @@ export interface RouteStop {
  */
 export interface Route {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   name: string;
   date: Date;
   vehicleId: string;

@@ -2,16 +2,37 @@
 
 import React, { useState } from 'react';
 import { Card, SectionHeader, Badge } from '@/presentation/components/ui';
+import { runAddTenantIdMigration, MigrationResult } from '@/infrastructure/firebase/migrations/addTenantIdMigration';
 
 const sections = [
   { id: 'company', label: '🏢 Empresa', desc: 'Datos de la empresa y configuración general' },
   { id: 'notifications', label: '🔔 Notificaciones', desc: 'Alertas de email, WhatsApp y sistema' },
   { id: 'integrations', label: '🔗 Integraciones', desc: 'Firebase, Stripe, correo SMTP' },
   { id: 'qr', label: '▦ Códigos QR', desc: 'Generación e impresión de QRs de activos' },
+  { id: 'data', label: '🗄️ Datos y migraciones', desc: 'Mantención de datos y migraciones multi-tenant' },
 ];
 
 export default function SettingsPage() {
   const [active, setActive] = useState('company');
+
+  // Estado de la migración de tenantId a datos legados
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResults, setMigrationResults] = useState<MigrationResult[] | null>(null);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
+
+  const handleMigration = async () => {
+    setMigrating(true);
+    setMigrationResults(null);
+    setMigrationError(null);
+    try {
+      const results = await runAddTenantIdMigration();
+      setMigrationResults(results);
+    } catch (err) {
+      setMigrationError(err instanceof Error ? err.message : 'Error desconocido al ejecutar la migración');
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -107,6 +128,58 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </>
+          )}
+
+          {active === 'data' && (
+            <>
+              <SectionHeader title="Datos y migraciones" subtitle="Herramientas de mantención de la base de datos" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--bg-border)' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '13px' }}>Asignar tenant a datos legados</div>
+                    <div className="text-xs text-secondary" style={{ marginTop: '2px' }}>
+                      Estampa el tenantId activo en todos los documentos antiguos que no lo tienen. Operación idempotente y segura de repetir.
+                    </div>
+                  </div>
+                  <button className="btn btn-primary" onClick={handleMigration} disabled={migrating}>
+                    {migrating ? '⏳ Migrando…' : '🏷️ Asignar tenant a datos legados'}
+                  </button>
+                </div>
+
+                {migrating && (
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <Badge color="blue" dot>Ejecutando migración…</Badge>
+                    <span className="text-xs text-secondary">Recorriendo colecciones y actualizando en lotes de 400.</span>
+                  </div>
+                )}
+
+                {migrationError && (
+                  <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--bg-border)' }}>
+                    <Badge color="red" dot>Error</Badge>
+                    <div className="text-xs text-secondary" style={{ marginTop: '6px' }}>{migrationError}</div>
+                  </div>
+                )}
+
+                {migrationResults && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <Badge color="green" dot>Migración completada</Badge>
+                      <span className="text-xs text-secondary">
+                        {migrationResults.reduce((s, r) => s + r.updated, 0)} documentos actualizados en total
+                      </span>
+                    </div>
+                    {migrationResults.map(r => (
+                      <div key={r.collection} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--bg-border)' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600 }}>{r.collection}</span>
+                        <Badge color={r.updated > 0 ? 'cyan' : 'gray'}>
+                          {r.updated > 0 ? `${r.updated} actualizados` : 'Sin cambios'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}

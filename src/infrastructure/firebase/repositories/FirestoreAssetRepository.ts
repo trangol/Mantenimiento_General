@@ -5,6 +5,7 @@ import {
 import { db } from '../firebaseConfig';
 import { Asset } from '@/core/domain/Asset';
 import { IAssetRepository } from '@/core/repositories/IAssetRepository';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 /**
  * FirestoreAssetRepository
@@ -40,6 +41,7 @@ function toDomain(id: string, data: Record<string, unknown>): Asset {
     createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
     updatedAt: (data.updatedAt as Timestamp)?.toDate?.() ?? new Date(),
     createdBy: (data.createdBy as string) || undefined,
+    tenantId: (data.tenantId as string) || undefined,
   };
 }
 
@@ -54,10 +56,7 @@ function toFirestore(asset: Omit<Asset, 'id'>): Record<string, unknown> {
     updatedAt: Timestamp.fromDate(asset.updatedAt),
   };
   // Firestore no acepta undefined — eliminar campos opcionales no definidos
-  Object.keys(data).forEach(key => {
-    if (data[key] === undefined) delete data[key];
-  });
-  return data;
+  return stripUndefined(data);
 }
 
 export class FirestoreAssetRepository implements IAssetRepository {
@@ -66,11 +65,14 @@ export class FirestoreAssetRepository implements IAssetRepository {
   async getById(id: string): Promise<Asset | null> {
     const snap = await getDoc(doc(this.col, id));
     if (!snap.exists()) return null;
-    return toDomain(snap.id, snap.data() as Record<string, unknown>);
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return toDomain(snap.id, data);
   }
 
   async getByQrCode(qrCodeId: string): Promise<Asset | null> {
-    const snap = await getDocs(query(this.col, where('qrCodeId', '==', qrCodeId)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('qrCodeId', '==', qrCodeId)));
     if (snap.empty) return null;
     const d = snap.docs[0];
     return toDomain(d.id, d.data() as Record<string, unknown>);
@@ -78,19 +80,20 @@ export class FirestoreAssetRepository implements IAssetRepository {
 
   async getByClientId(clientId: string): Promise<Asset[]> {
     const snap = await getDocs(
-      query(this.col, where('clientId', '==', clientId), orderBy('name'))
+      query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('name'))
     );
     return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
   }
 
   async getByType(type: Asset['type']): Promise<Asset[]> {
-    const snap = await getDocs(query(this.col, where('type', '==', type)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('type', '==', type)));
     return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
   }
 
   async create(asset: Asset): Promise<void> {
     const { id, ...data } = asset;
-    await setDoc(doc(this.col, id), toFirestore(data));
+    // Toda escritura se estampa con el tenant activo
+    await setDoc(doc(this.col, id), stampTenant(toFirestore(data)));
   }
 
   async update(id: string, partial: Partial<Asset>): Promise<void> {

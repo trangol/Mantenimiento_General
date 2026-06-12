@@ -1,10 +1,12 @@
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp,
+  query, where, orderBy, limit, startAfter, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Client } from '@/core/domain/Client';
 import { IClientRepository } from '@/core/repositories/IClientRepository';
+import { Page, PageRequest, clampPageSize } from '@/core/domain/Pagination';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 /**
  * FirestoreClientRepository
@@ -36,6 +38,7 @@ function toDomain(id: string, data: Record<string, unknown>): Client {
     createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
     updatedAt: (data.updatedAt as Timestamp)?.toDate?.() ?? new Date(),
     createdBy: (data.createdBy as string) || undefined,
+    tenantId: (data.tenantId as string) || undefined,
   };
 }
 
@@ -47,10 +50,7 @@ function toFirestore(client: Omit<Client, 'id'>): Record<string, unknown> {
     updatedAt: Timestamp.fromDate(client.updatedAt),
   };
   // Firestore no acepta undefined — eliminar campos opcionales no definidos
-  Object.keys(data).forEach(key => {
-    if (data[key] === undefined) delete data[key];
-  });
-  return data;
+  return stripUndefined(data);
 }
 
 export class FirestoreClientRepository implements IClientRepository {
@@ -59,29 +59,58 @@ export class FirestoreClientRepository implements IClientRepository {
   async getById(id: string): Promise<Client | null> {
     const snap = await getDoc(doc(this.col, id));
     if (!snap.exists()) return null;
-    return toDomain(snap.id, snap.data() as Record<string, unknown>);
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return toDomain(snap.id, data);
   }
 
   async getAll(): Promise<Client[]> {
-    const snap = await getDocs(query(this.col, orderBy('businessName')));
+    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('businessName')));
     return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
   }
 
   async getByRut(rut: string): Promise<Client | null> {
-    const snap = await getDocs(query(this.col, where('rut', '==', rut)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('rut', '==', rut)));
     if (snap.empty) return null;
     const d = snap.docs[0];
     return toDomain(d.id, d.data() as Record<string, unknown>);
   }
 
   async getByServiceType(serviceType: Client['serviceType']): Promise<Client[]> {
-    const snap = await getDocs(query(this.col, where('serviceType', '==', serviceType)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('serviceType', '==', serviceType)));
     return snap.docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
   }
 
   async create(client: Client): Promise<void> {
     const { id, ...data } = client;
-    await setDoc(doc(this.col, id), toFirestore(data));
+    // Toda escritura se estampa con el tenant activo
+    await setDoc(doc(this.col, id), stampTenant(toFirestore(data)));
+  }
+
+  /**
+   * Paginación cursor-based (buena práctica Firestore: startAfter + limit).
+   * Cursor opaco = id del último documento de la página anterior.
+   */
+  async getPage(request: PageRequest): Promise<Page<Client>> {
+    const pageSize = clampPageSize(request.pageSize);
+    const constraints = [tenantWhere(), orderBy('businessName'), limit(pageSize + 1)];
+    if (request.cursor) {
+      // Recuperar el doc cursor para posicionar startAfter
+      const cursorSnap = await getDoc(doc(this.col, request.cursor));
+      if (cursorSnap.exists()) {
+        constraints.splice(2, 0, startAfter(cursorSnap));
+      }
+    }
+    const snap = await getDocs(query(this.col, ...constraints));
+    const hasMore = snap.docs.length > pageSize;
+    const docs = hasMore ? snap.docs.slice(0, pageSize) : snap.docs;
+    const items = docs.map(d => toDomain(d.id, d.data() as Record<string, unknown>));
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore && docs.length > 0 ? docs[docs.length - 1].id : null,
+    };
   }
 
   async update(id: string, partial: Partial<Client>): Promise<void> {

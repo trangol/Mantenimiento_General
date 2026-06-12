@@ -3,6 +3,7 @@
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarContext';
+import { SyncStatusBadge } from './SyncStatusBadge';
 
 // Mapa de rutas a títulos legibles
 const routeTitles: Record<string, { title: string; subtitle: string }> = {
@@ -50,6 +51,9 @@ export function Topbar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Estado de sincronización offline-first */}
+        <SyncStatusBadge />
+
         {/* Notificaciones */}
         <button className="btn btn-ghost btn-icon" title="Notificaciones" style={{ position: 'relative' }}>
           <span style={{ fontSize: '18px' }}>🔔</span>

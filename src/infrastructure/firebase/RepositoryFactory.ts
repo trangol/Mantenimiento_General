@@ -14,6 +14,7 @@ import { FirestoreInvoiceRepository } from './repositories/FirestoreInvoiceRepos
 import { FirestoreVehicleRepository } from './repositories/FirestoreVehicleRepository';
 import { FirestoreClientRepository } from './repositories/FirestoreClientRepository';
 import { FirestoreAssetRepository } from './repositories/FirestoreAssetRepository';
+import { FirestoreServiceRequestRepository } from './repositories/FirestoreServiceRequestRepository';
 
 import { IMaintenanceRecordRepository } from '@/core/repositories/IMaintenanceRecordRepository';
 import { IInventoryRepository } from '@/core/repositories/IInventoryRepository';
@@ -22,6 +23,7 @@ import { IInvoiceRepository } from '@/core/repositories/IInvoiceRepository';
 import { IVehicleRepository } from '@/core/repositories/IVehicleRepository';
 import { IClientRepository } from '@/core/repositories/IClientRepository';
 import { IAssetRepository } from '@/core/repositories/IAssetRepository';
+import { IServiceRequestRepository } from '@/core/repositories/IServiceRequestRepository';
 
 class RepositoryFactory {
   private static instance: RepositoryFactory;
@@ -34,6 +36,7 @@ class RepositoryFactory {
   private _vehicles?: IVehicleRepository;
   private _clients?: IClientRepository;
   private _assets?: IAssetRepository;
+  private _serviceRequests?: IServiceRequestRepository;
 
   private constructor() {}
 
@@ -77,6 +80,11 @@ class RepositoryFactory {
   get assets(): IAssetRepository {
     if (!this._assets) this._assets = new FirestoreAssetRepository();
     return this._assets;
+  }
+
+  get serviceRequests(): IServiceRequestRepository {
+    if (!this._serviceRequests) this._serviceRequests = new FirestoreServiceRequestRepository();
+    return this._serviceRequests;
   }
 }
 

@@ -1,10 +1,11 @@
 import {
-  collection, doc, getDocs, getDoc, addDoc, updateDoc,
+  collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
   query, where, orderBy, Timestamp, getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Quote, QuoteStatus } from '@/core/domain/Quote';
 import { IQuoteRepository } from '@/core/repositories/IQuoteRepository';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 function toQuote(id: string, data: Record<string, unknown>): Quote {
   return {
@@ -22,28 +23,32 @@ export class FirestoreQuoteRepository implements IQuoteRepository {
   private col = collection(db, 'quotes');
 
   async getAll(): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
   }
 
   async getById(id: string): Promise<Quote | null> {
     const snap = await getDoc(doc(this.col, id));
-    return snap.exists() ? toQuote(snap.id, snap.data() as Record<string, unknown>) : null;
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return toQuote(snap.id, data);
   }
 
   async getByClient(clientId: string): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
   }
 
   async getByStatus(status: QuoteStatus): Promise<Quote[]> {
-    const snap = await getDocs(query(this.col, where('status', '==', status), orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('status', '==', status), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => toQuote(d.id, d.data() as Record<string, unknown>));
   }
 
   async create(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<Quote> {
     const now = Timestamp.now();
-    const ref = await addDoc(this.col, { ...quote, createdAt: now, updatedAt: now });
+    const ref = await addDoc(this.col, stampTenant(stripUndefined({ ...quote, createdAt: now, updatedAt: now })));
     return { ...quote, id: ref.id, createdAt: now.toDate(), updatedAt: now.toDate() };
   }
 
@@ -57,11 +62,14 @@ export class FirestoreQuoteRepository implements IQuoteRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await updateDoc(doc(this.col, id), { status: 'expired', updatedAt: Timestamp.now() });
+    // Eliminación real: el use case (DeleteQuoteUseCase) garantiza que solo
+    // se eliminan borradores ('draft'); el resto de estados se conserva
+    // para trazabilidad del negocio.
+    await deleteDoc(doc(this.col, id));
   }
 
   async getNextNumber(): Promise<string> {
-    const snap = await getCountFromServer(this.col);
+    const snap = await getCountFromServer(query(this.col, tenantWhere()));
     const num = (snap.data().count + 1).toString().padStart(4, '0');
     return `COT-${num}`;
   }

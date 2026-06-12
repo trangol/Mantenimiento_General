@@ -1,7 +1,9 @@
-import { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, orderBy, limit, startAfter, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { IMaintenanceRecordRepository } from '../../../core/repositories/IMaintenanceRecordRepository';
-import { MaintenanceRecord, MaintenanceStatus } from '../../../core/domain/MaintenanceRecord';
+import { IMaintenanceRecordRepository } from '@/core/repositories/IMaintenanceRecordRepository';
+import { MaintenanceRecord, MaintenanceStatus } from '@/core/domain/MaintenanceRecord';
+import { Page, PageRequest, clampPageSize } from '@/core/domain/Pagination';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordRepository {
   private collectionName = 'maintenance_records';
@@ -11,30 +13,60 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
     const docSnap = await getDoc(docRef);
     
     if (!docSnap.exists()) return null;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(docSnap.data() as Record<string, unknown>)) return null;
     return this.mapToDomain(docSnap.data(), id);
   }
 
+  /**
+   * Paginación cursor-based (startAfter + limit), ordenada por fecha
+   * programada descendente. Cursor opaco = id del último doc.
+   * NOTA: where(tenantId) + orderBy(scheduledDate) exige índice compuesto.
+   */
+  async getPage(request: PageRequest): Promise<Page<MaintenanceRecord>> {
+    const pageSize = clampPageSize(request.pageSize);
+    const col = collection(db, this.collectionName);
+    const constraints = [tenantWhere(), orderBy('scheduledDate', 'desc'), limit(pageSize + 1)];
+    if (request.cursor) {
+      // Recuperar el doc cursor para posicionar startAfter
+      const cursorSnap = await getDoc(doc(db, this.collectionName, request.cursor));
+      if (cursorSnap.exists()) {
+        constraints.splice(2, 0, startAfter(cursorSnap));
+      }
+    }
+    const snap = await getDocs(query(col, ...constraints));
+    const hasMore = snap.docs.length > pageSize;
+    const docs = hasMore ? snap.docs.slice(0, pageSize) : snap.docs;
+    const items = docs.map(d => this.mapToDomain(d.data(), d.id));
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore && docs.length > 0 ? docs[docs.length - 1].id : null,
+    };
+  }
+
   async getByAssetId(assetId: string): Promise<MaintenanceRecord[]> {
-    const q = query(collection(db, this.collectionName), where('assetId', '==', assetId));
+    const q = query(collection(db, this.collectionName), tenantWhere(), where('assetId', '==', assetId));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => this.mapToDomain(doc.data(), doc.id));
   }
 
   async getByTechnicianId(technicianId: string): Promise<MaintenanceRecord[]> {
-    const q = query(collection(db, this.collectionName), where('technicianId', '==', technicianId));
+    const q = query(collection(db, this.collectionName), tenantWhere(), where('technicianId', '==', technicianId));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => this.mapToDomain(doc.data(), doc.id));
   }
 
   async getByClientId(clientId: string): Promise<MaintenanceRecord[]> {
-    const q = query(collection(db, this.collectionName), where('clientId', '==', clientId));
+    const q = query(collection(db, this.collectionName), tenantWhere(), where('clientId', '==', clientId));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => this.mapToDomain(doc.data(), doc.id));
   }
 
   async create(record: MaintenanceRecord): Promise<void> {
     const docRef = doc(db, this.collectionName, record.id);
-    await setDoc(docRef, this.mapToFirestore(record));
+    // Toda escritura se estampa con el tenant activo
+    await setDoc(docRef, stampTenant(this.mapToFirestore(record)));
   }
 
   async update(id: string, record: Partial<MaintenanceRecord>): Promise<void> {
@@ -68,11 +100,13 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
       totalCost: data.totalCost || 0,
       createdAt: data.createdAt?.toDate() || new Date(),
       updatedAt: data.updatedAt?.toDate() || new Date(),
+      tenantId: data.tenantId || undefined,
     };
   }
 
-  private mapToFirestore(record: MaintenanceRecord): any {
+  private mapToFirestore(record: MaintenanceRecord): Record<string, unknown> {
     const { id, ...data } = record;
-    return data;
+    // Firestore no acepta undefined — limpiar campos opcionales
+    return stripUndefined(data as unknown as Record<string, unknown>);
   }
 }

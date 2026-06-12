@@ -5,6 +5,7 @@ import {
 import { db } from '../firebaseConfig';
 import { Invoice, InvoiceStatus, Payment } from '@/core/domain/Invoice';
 import { IInvoiceRepository } from '@/core/repositories/IInvoiceRepository';
+import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
 function toInvoice(id: string, data: Record<string, unknown>): Invoice {
   return {
@@ -26,22 +27,26 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
   private col = collection(db, 'invoices');
 
   async getAll(): Promise<Invoice[]> {
-    const snap = await getDocs(query(this.col, orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.col, tenantWhere(), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
   }
 
   async getById(id: string): Promise<Invoice | null> {
     const snap = await getDoc(doc(this.col, id));
-    return snap.exists() ? toInvoice(snap.id, snap.data() as Record<string, unknown>) : null;
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    // Aislamiento multi-tenant: nunca exponer datos de otro tenant
+    if (!belongsToTenant(data)) return null;
+    return toInvoice(snap.id, data);
   }
 
   async getByClient(clientId: string): Promise<Invoice[]> {
-    const snap = await getDocs(query(this.col, where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('clientId', '==', clientId), orderBy('createdAt', 'desc')));
     return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
   }
 
   async getByStatus(status: InvoiceStatus): Promise<Invoice[]> {
-    const snap = await getDocs(query(this.col, where('status', '==', status)));
+    const snap = await getDocs(query(this.col, tenantWhere(), where('status', '==', status)));
     return snap.docs.map(d => toInvoice(d.id, d.data() as Record<string, unknown>));
   }
 
@@ -49,6 +54,7 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
     const now = Timestamp.now();
     const snap = await getDocs(query(
       this.col,
+      tenantWhere(),
       where('status', 'in', ['pending', 'partial']),
       where('dueDate', '<', now)
     ));
@@ -57,7 +63,7 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
 
   async create(invoice: Omit<Invoice, 'id' | 'createdAt' | 'updatedAt'>): Promise<Invoice> {
     const now = Timestamp.now();
-    const ref = await addDoc(this.col, { ...invoice, createdAt: now, updatedAt: now });
+    const ref = await addDoc(this.col, stampTenant(stripUndefined({ ...invoice, createdAt: now, updatedAt: now })));
     return { ...invoice, id: ref.id, createdAt: now.toDate(), updatedAt: now.toDate() };
   }
 
@@ -88,7 +94,7 @@ export class FirestoreInvoiceRepository implements IInvoiceRepository {
   }
 
   async getNextNumber(): Promise<string> {
-    const snap = await getCountFromServer(this.col);
+    const snap = await getCountFromServer(query(this.col, tenantWhere()));
     const num = (snap.data().count + 1).toString().padStart(4, '0');
     return `FAC-${num}`;
   }

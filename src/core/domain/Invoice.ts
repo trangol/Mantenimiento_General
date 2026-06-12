@@ -14,6 +14,7 @@ export interface Payment {
 
 export interface Invoice {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   invoiceNumber: string; // FAC-0001
   clientId: string;
   clientName: string;

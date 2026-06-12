@@ -2,6 +2,7 @@ export type TeamRole = 'admin' | 'supervisor' | 'technician' | 'driver';
 
 export interface TeamMember {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   uid?: string; // Firebase Auth UID
   fullName: string;
   rut: string;

@@ -11,6 +11,7 @@ export interface QuoteItem {
 
 export interface Quote {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   quoteNumber: string; // COT-0001
   clientId: string;
   clientName: string;

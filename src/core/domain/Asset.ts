@@ -33,6 +33,7 @@ export interface RecurringSupply {
 
 export interface Asset {
   id: string;                         // Formato: AST-XXXXXXXX
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   clientId: string;                   // FK → Client.id
   name: string;                       // Ej: "Piscina Principal", "Tablero Eléctrico N°1"
   type: AssetType;

@@ -2,6 +2,7 @@ export type InventoryCategory = 'chemical' | 'equipment' | 'tool' | 'spare_part'
 
 export interface InventoryItem {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   sku: string;
   name: string;
   description?: string;
@@ -22,6 +23,7 @@ export interface InventoryItem {
 
 export interface StockMovement {
   id: string;
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   inventoryItemId: string;
   type: 'in' | 'out' | 'adjustment';
   quantity: number;

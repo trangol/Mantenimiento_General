@@ -20,6 +20,7 @@ export type ServiceType =
 
 export interface Client {
   id: string;               // Formato: CLI-XXXXXXXX (generado automáticamente)
+  tenantId?: string;  // Multi-tenancy: empresa mantenedora dueña del dato
   rut?: string;             // RUT chileno (ej: 76.345.123-4)
   businessName: string;     // Razón social o nombre
   contactName: string;      // Nombre del contacto principal
