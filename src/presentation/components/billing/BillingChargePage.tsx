@@ -363,7 +363,7 @@ export function BillingChargePage() {
 
       {/* KPIs */}
       <div className="grid-4 stagger" style={{ marginBottom: '20px' }}>
-        <StatCard label="Borradores" value={statCounts.draft} icon="📄" color="gray" />
+        <StatCard label="Borradores" value={statCounts.draft} icon="📄" color="blue" />
         <StatCard label="Emitidos" value={statCounts.pending} icon="📤" color="yellow" />
         <StatCard label="Vencidos" value={statCounts.overdue} icon="⚠️" color="red" />
         <StatCard label="Pagados" value={statCounts.paid} icon="✅" color="green" />
