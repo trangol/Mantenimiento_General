@@ -7,18 +7,29 @@ import { Invoice, InvoiceStatus, Payment } from '@/core/domain/Invoice';
 import { IInvoiceRepository } from '@/core/repositories/IInvoiceRepository';
 import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
+function toDate(v: unknown): Date | undefined {
+  if (!v) return undefined;
+  if (v instanceof Timestamp) return v.toDate();
+  if (v instanceof Date) return v;
+  return undefined;
+}
+
 function toInvoice(id: string, data: Record<string, unknown>): Invoice {
   return {
     ...data,
     id,
-    dueDate: (data.dueDate as Timestamp)?.toDate?.() ?? new Date(),
-    sentAt: data.sentAt ? (data.sentAt as Timestamp).toDate() : undefined,
-    paidAt: data.paidAt ? (data.paidAt as Timestamp).toDate() : undefined,
-    createdAt: (data.createdAt as Timestamp)?.toDate?.() ?? new Date(),
-    updatedAt: (data.updatedAt as Timestamp)?.toDate?.() ?? new Date(),
+    dueDate: toDate(data.dueDate) ?? new Date(),
+    sentAt: toDate(data.sentAt),
+    paidAt: toDate(data.paidAt),
+    createdAt: toDate(data.createdAt) ?? new Date(),
+    updatedAt: toDate(data.updatedAt) ?? new Date(),
+    periodStart: toDate(data.periodStart),
+    periodEnd: toDate(data.periodEnd),
+    sentEmailAt: toDate(data.sentEmailAt),
+    reconciledAt: toDate(data.reconciledAt),
     payments: ((data.payments as Record<string, unknown>[]) ?? []).map(p => ({
       ...p,
-      paidAt: (p.paidAt as Timestamp)?.toDate?.() ?? new Date(),
+      paidAt: toDate(p.paidAt) ?? new Date(),
     })),
   } as Invoice;
 }

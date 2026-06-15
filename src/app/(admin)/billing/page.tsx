@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 
 /**
- * /billing (Cobros) — Los cobros viven dentro del módulo Finanzas
- * (pestaña "Cobros" de FinancesPage). Redirigimos para no duplicar UI.
+ * /billing — Redirige al flujo de Preparación (paso 3 del flujo de cobros)
  */
 export default function Page() {
-  redirect('/finances');
+  redirect('/billing/prepare');
 }

@@ -35,11 +35,18 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    label: 'Flujo de Cobros',
+    items: [
+      { href: '/billing/prepare',  label: 'Preparación',    icon: '📋' },
+      { href: '/billing/charge',   label: 'Cobros',          icon: '💳' },
+      { href: '/billing/validate', label: 'Validar Pagos',   icon: '✅' },
+    ],
+  },
+  {
     label: 'Finanzas',
     items: [
-      { href: '/finances', label: 'Finanzas',      icon: '💰' },
-      { href: '/billing',  label: 'Cobros',         icon: '💳' },
-      { href: '/reports',  label: 'Estadísticas',   icon: '📊' },
+      { href: '/finances', label: 'Resumen financiero', icon: '💰' },
+      { href: '/reports',  label: 'Estadísticas',       icon: '📊' },
     ],
   },
   {

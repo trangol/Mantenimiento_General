@@ -1,7 +1,7 @@
 import { doc, getDoc, getDocs, collection, query, where, orderBy, limit, startAfter, setDoc, updateDoc, documentId, QueryConstraint, DocumentData } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { IMaintenanceRecordRepository } from '@/core/repositories/IMaintenanceRecordRepository';
-import { MaintenanceRecord, MaintenanceStatus } from '@/core/domain/MaintenanceRecord';
+import { MaintenanceRecord, MaintenanceStatus, ChecklistItem } from '@/core/domain/MaintenanceRecord';
 import { Page, PageRequest, clampPageSize } from '@/core/domain/Pagination';
 import { tenantWhere, stampTenant, belongsToTenant, stripUndefined } from '@/infrastructure/firebase/tenantScope';
 
@@ -64,6 +64,31 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
     return querySnapshot.docs.map(doc => this.mapToDomain(doc.data(), doc.id));
   }
 
+  /** Retorna OTs completadas en el período que aún no están facturadas (billingStatus unbilled o in_preparation).
+   * La fecha se filtra EN MEMORIA tras la query por tenant (política índices CLAUDE.md). */
+  async getCompletedUnbilledInPeriod(from: Date, to: Date): Promise<MaintenanceRecord[]> {
+    const q = query(
+      collection(db, this.collectionName),
+      tenantWhere(),
+      where('status', '==', 'completed'),
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => this.mapToDomain(d.data(), d.id))
+      .filter(r => {
+        const date = r.completedAt ?? r.scheduledDate;
+        const billing = r.billingStatus ?? 'unbilled';
+        return date >= from && date <= to && (billing === 'unbilled' || billing === 'in_preparation');
+      });
+  }
+
+  async updateBillingStatus(id: string, billingStatus: import('@/core/domain/MaintenanceRecord').BillingStatus, invoiceId?: string): Promise<void> {
+    const docRef = doc(db, this.collectionName, id);
+    const update: Record<string, unknown> = { billingStatus, updatedAt: new Date() };
+    if (invoiceId) update.invoiceId = invoiceId;
+    await updateDoc(docRef, update);
+  }
+
   async create(record: MaintenanceRecord): Promise<void> {
     const docRef = doc(db, this.collectionName, record.id);
     // Toda escritura se estampa con el tenant activo
@@ -84,6 +109,7 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
   private mapToDomain(data: DocumentData, id: string): MaintenanceRecord {
     return {
       id,
+      tenantId: data.tenantId || undefined,
       assetId: data.assetId,
       assetName: data.assetName,
       technicianId: data.technicianId,
@@ -91,17 +117,28 @@ export class FirestoreMaintenanceRecordRepository implements IMaintenanceRecordR
       clientId: data.clientId,
       clientName: data.clientName,
       status: data.status,
+      routeId: data.routeId || undefined,
+      workOrderNotes: data.workOrderNotes || undefined,
       scheduledDate: data.scheduledDate?.toDate() || new Date(),
       startedAt: data.startedAt?.toDate(),
       completedAt: data.completedAt?.toDate(),
+      checklist: (data.checklist ?? []).map((c: ChecklistItem & { completedAt?: { toDate?: () => Date } | Date }) => ({
+        ...c,
+        completedAt: c.completedAt && typeof (c.completedAt as { toDate?: () => Date }).toDate === 'function'
+          ? (c.completedAt as { toDate: () => Date }).toDate()
+          : c.completedAt instanceof Date ? c.completedAt : undefined,
+      })),
+      checklistCompleted: data.checklistCompleted ?? false,
       initialPhotos: data.initialPhotos || [],
       finalPhotos: data.finalPhotos || [],
       observations: data.observations || '',
       suppliesUsed: data.suppliesUsed || [],
+      serviceRate: data.serviceRate || undefined,
       totalCost: data.totalCost || 0,
+      billingStatus: data.billingStatus ?? 'unbilled',
+      invoiceId: data.invoiceId || undefined,
       createdAt: data.createdAt?.toDate() || new Date(),
       updatedAt: data.updatedAt?.toDate() || new Date(),
-      tenantId: data.tenantId || undefined,
     };
   }
 

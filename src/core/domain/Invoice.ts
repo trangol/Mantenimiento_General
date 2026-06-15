@@ -1,5 +1,8 @@
-export type InvoiceStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+export type InvoiceStatus = 'draft' | 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
 export type PaymentMethod = 'transfer' | 'cash' | 'card' | 'cheque';
+
+/** Período de agrupación de cobros */
+export type BillingPeriodType = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual' | 'annual' | 'biannual';
 
 export interface Payment {
   id: string;
@@ -32,6 +35,22 @@ export interface Invoice {
   createdBy: string;
   sentAt?: Date;
   paidAt?: Date;
+
+  // ── Campos del flujo de cobro ─────────────────────────────────────────────
+  periodType?: BillingPeriodType;  // Tipo de período que cubre esta factura
+  periodStart?: Date;               // Inicio del período facturado
+  periodEnd?: Date;                 // Fin del período facturado
+  sentByEmail?: boolean;            // Si fue enviada por correo
+  sentEmailAt?: Date;
+  sentByWhatsapp?: boolean;
+  publicToken?: string;             // Token para link público (portal cliente sin login)
+
+  // ── Conciliación bancaria ─────────────────────────────────────────────────
+  reconciled?: boolean;             // true = conciliada con archivo Excel de pagos
+  reconciledAt?: Date;
+  reconciledBy?: string;
+  overdueRemindersSent?: number;    // Cantidad de recordatorios enviados
+
   createdAt: Date;
   updatedAt: Date;
 }

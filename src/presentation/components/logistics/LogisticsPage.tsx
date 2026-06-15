@@ -334,12 +334,178 @@ function NewScheduleModal({ vehicles, onClose, onCreate }: {
   );
 }
 
+// ── PlanningTab: Vista de planificación anticipada ────────────────────────────
+
+function PlanningTab({ schedules, vehicles }: { schedules: RecurringSchedule[]; vehicles: Vehicle[] }) {
+  const today = new Date();
+  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const [baseDate, setBaseDate] = useState(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - d.getDay() + 1); // Lunes de la semana actual
+    return d;
+  });
+
+  // Genera los días del período visible
+  const days = React.useMemo(() => {
+    const result: Date[] = [];
+    const count = viewMode === 'week' ? 7 : 28;
+    for (let i = 0; i < count; i++) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() + i);
+      result.push(d);
+    }
+    return result;
+  }, [baseDate, viewMode]);
+
+  // Calcula paradas esperadas por día según frecuencias activas
+  const stopsByDay = React.useMemo(() => {
+    const map = new Map<string, RecurringSchedule[]>();
+    days.forEach(day => {
+      const key = dateToInputValue(day);
+      const dayOfWeek = day.getDay(); // 0=Dom, 1=Lun...
+      const expected = schedules.filter(s => s.daysOfWeek.includes(dayOfWeek));
+      map.set(key, expected);
+    });
+    return map;
+  }, [days, schedules]);
+
+  const navigate = (dir: -1 | 1) => {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + dir * (viewMode === 'week' ? 7 : 28));
+    setBaseDate(d);
+  };
+
+  const fmtDay = (d: Date) => d.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' });
+  const isToday = (d: Date) => dateToInputValue(d) === dateToInputValue(today);
+
+  // Resumen de la semana/mes
+  const totalPlanned = days.reduce((sum, d) => sum + (stopsByDay.get(dateToInputValue(d))?.length ?? 0), 0);
+  const vehiclesInUse = new Set(schedules.map(s => s.vehicleId)).size;
+
+  return (
+    <div>
+      {/* Controles */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface)', padding: '4px', borderRadius: 'var(--radius-md)' }}>
+          {(['week', 'month'] as const).map(m => (
+            <button key={m} onClick={() => setViewMode(m)} style={{
+              padding: '5px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
+              fontSize: '12px', fontWeight: 600,
+              background: viewMode === m ? 'var(--bg-card)' : 'transparent',
+              color: viewMode === m ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}>{m === 'week' ? 'Semana' : '4 semanas'}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>◀</button>
+          <span style={{ fontSize: '13px', fontWeight: 600, minWidth: '200px', textAlign: 'center' }}>
+            {fmtDay(days[0])} — {fmtDay(days[days.length - 1])}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(1)}>▶</button>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => {
+          const d = new Date(today);
+          d.setDate(d.getDate() - d.getDay() + 1);
+          setBaseDate(d);
+        }}>Hoy</button>
+      </div>
+
+      {/* KPIs del período */}
+      <div className="grid-4 stagger" style={{ marginBottom: '20px' }}>
+        <StatCard label={viewMode === 'week' ? 'Servicios esta semana' : 'Servicios 4 semanas'} value={totalPlanned} icon="🔧" color="blue" />
+        <StatCard label="Clientes activos" value={schedules.length} icon="🏢" color="cyan" />
+        <StatCard label="Vehículos en uso" value={vehiclesInUse} icon="🚐" color="yellow" />
+        <StatCard label="Técnicos asignados" value={new Set(schedules.map(s => s.assignedTechnicianId)).size} icon="👤" color="green" />
+      </div>
+
+      {/* Alerta si no hay frecuencias */}
+      {schedules.length === 0 && (
+        <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 'var(--radius-md)', padding: '14px', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+          ⚠️ No hay frecuencias programadas. Ve al tab <strong>Frecuencias</strong> para configurar la recurrencia de cada cliente.
+        </div>
+      )}
+
+      {/* Grilla de días */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${viewMode === 'week' ? 7 : 4}, minmax(0, 1fr))`, gap: '8px' }}>
+        {days.map(day => {
+          const key = dateToInputValue(day);
+          const stops = stopsByDay.get(key) ?? [];
+          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+          return (
+            <div key={key} style={{
+              border: `1px solid ${isToday(day) ? 'rgba(59,130,246,0.5)' : 'var(--bg-border)'}`,
+              borderRadius: 'var(--radius-md)',
+              background: isToday(day) ? 'rgba(59,130,246,0.05)' : isWeekend ? 'var(--bg-surface)' : 'var(--bg-card)',
+              padding: '8px',
+              minHeight: '100px',
+            }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '6px', color: isToday(day) ? 'var(--brand-400)' : isWeekend ? 'var(--text-muted)' : 'var(--text-secondary)' }}>
+                {day.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric' })}
+                {isToday(day) && <span style={{ marginLeft: '4px', fontSize: '10px', background: 'var(--brand-500)', color: 'white', borderRadius: '4px', padding: '1px 4px' }}>Hoy</span>}
+              </div>
+              {stops.length === 0 ? (
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', paddingTop: '16px' }}>—</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {stops.slice(0, viewMode === 'week' ? 8 : 4).map(s => (
+                    <div key={s.id} style={{
+                      fontSize: '10px', padding: '2px 5px',
+                      borderRadius: '4px', background: 'rgba(59,130,246,0.12)',
+                      color: 'var(--brand-300)', overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }} title={`${s.clientName} · ${s.assignedTechnicianName} · ${s.estimatedDurationMin}min`}>
+                      {s.clientName}
+                    </div>
+                  ))}
+                  {stops.length > (viewMode === 'week' ? 8 : 4) && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                      +{stops.length - (viewMode === 'week' ? 8 : 4)} más
+                    </div>
+                  )}
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
+                    {stops.length} servicio{stops.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detalle por técnico/vehículo */}
+      {schedules.length > 0 && (
+        <div style={{ marginTop: '24px' }}>
+          <SectionHeader title="Asignaciones del período" subtitle="Carga de trabajo por técnico y vehículo" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px', marginTop: '12px' }}>
+            {Array.from(new Set(schedules.map(s => s.assignedTechnicianId))).map(techId => {
+              const techSchedules = schedules.filter(s => s.assignedTechnicianId === techId);
+              const techName = techSchedules[0]?.assignedTechnicianName ?? techId;
+              const weeklyCount = techSchedules.reduce((sum, s) => sum + s.daysOfWeek.length, 0);
+              const vehicle = vehicles.find(v => v.id === techSchedules[0]?.vehicleId);
+              return (
+                <Card key={techId} style={{ padding: '14px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '6px' }}>👤 {techName}</div>
+                  {vehicle && <div className="text-xs text-secondary" style={{ marginBottom: '6px' }}>🚐 {vehicle.plate} — {vehicle.brand} {vehicle.model}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    <span>Clientes asignados: <strong style={{ color: 'var(--text-primary)' }}>{techSchedules.length}</strong></span>
+                    <span>Visitas/sem: <strong style={{ color: 'var(--brand-400)' }}>{weeklyCount}</strong></span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'routes' | 'schedules';
+type Tab = 'routes' | 'schedules' | 'planning';
 
 export function LogisticsPage() {
-  const [tab, setTab] = useState<Tab>('routes');
+  const [tab, setTab] = useState<Tab>('planning');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [routes, setRoutes] = useState<Route[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -369,7 +535,7 @@ export function LogisticsPage() {
 
   useEffect(() => { repositories.vehicles.getAll().then(setVehicles); }, []);
   useEffect(() => { loadRoutes(selectedDate); }, [selectedDate, loadRoutes]);
-  useEffect(() => { if (tab === 'schedules') loadSchedules(); }, [tab, loadSchedules]);
+  useEffect(() => { if (tab === 'schedules' || tab === 'planning') loadSchedules(); }, [tab, loadSchedules]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -412,7 +578,7 @@ export function LogisticsPage() {
         background: 'var(--bg-surface)', padding: '4px',
         borderRadius: 'var(--radius-md)', width: 'fit-content',
       }}>
-        {(['routes', 'schedules'] as Tab[]).map(t => (
+        {(['planning', 'routes', 'schedules'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: '6px 16px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
             fontSize: '13px', fontWeight: 600,
@@ -420,10 +586,13 @@ export function LogisticsPage() {
             color: tab === t ? 'var(--text-primary)' : 'var(--text-secondary)',
             boxShadow: tab === t ? 'var(--shadow-sm)' : 'none',
           }}>
-            {t === 'routes' ? '🗺️ Rutas Diarias' : '📅 Frecuencias'}
+            {t === 'planning' ? '📆 Planificación' : t === 'routes' ? '🗺️ Rutas Diarias' : '🔁 Frecuencias'}
           </button>
         ))}
       </div>
+
+      {/* ── PLANNING TAB ── */}
+      {tab === 'planning' && <PlanningTab schedules={schedules} vehicles={vehicles} />}
 
       {/* ── ROUTES TAB ── */}
       {tab === 'routes' && (
