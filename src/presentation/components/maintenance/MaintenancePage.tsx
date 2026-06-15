@@ -6,7 +6,6 @@ import { FirestoreMaintenanceRecordRepository } from '@/infrastructure/firebase/
 import { MaintenanceRecord, MaintenanceStatus, BillingStatus, ChecklistItem } from '@/core/domain/MaintenanceRecord';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { db } from '@/infrastructure/firebase/firebaseConfig';
-import { getCurrentTenantId } from '@/infrastructure/tenant/TenantContext';
 import { tenantWhere } from '@/infrastructure/firebase/tenantScope';
 
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed';
@@ -225,8 +224,7 @@ export function MaintenancePage() {
 
   useEffect(() => {
     try {
-      const tenantId = getCurrentTenantId();
-      const q = query(collection(db, 'maintenance_records'), tenantWhere(tenantId));
+      const q = query(collection(db, 'maintenance_records'), tenantWhere());
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const records = snapshot.docs.map(doc => {
           const data = doc.data();
