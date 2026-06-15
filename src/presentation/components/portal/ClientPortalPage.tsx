@@ -10,10 +10,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Card, SectionHeader, Badge, EmptyState,
 } from '@/presentation/components/ui';
 import { repositories } from '@/infrastructure/firebase/RepositoryFactory';
+import { getSession, clearSession } from '@/infrastructure/auth/RoleContext';
 import { GetClientPortalDataUseCase, ClientPortalData } from '@/use-cases/portal/GetClientPortalDataUseCase';
 import { CreateServiceRequestUseCase } from '@/use-cases/portal/CreateServiceRequestUseCase';
 import { ServiceRequestStatus } from '@/core/domain/ServiceRequest';
@@ -192,6 +194,7 @@ function ServiceRequestForm({ data, onCreated }: { data: ClientPortalData; onCre
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export function ClientPortalPage() {
+  const router = useRouter();
   const [clientId, setClientId] = useState<string | null>(null);
   const [data, setData] = useState<ClientPortalData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -219,8 +222,14 @@ export function ClientPortalPage() {
     }
   }, []);
 
-  // Sesión recordada en localStorage
+  // Prioridad 1: sesión de RoleContext (viene del login unificado)
+  // Prioridad 2: sesión propia del portal en localStorage
   useEffect(() => {
+    const roleSession = getSession();
+    if (roleSession?.role === 'client' && roleSession.userId) {
+      loadData(roleSession.userId);
+      return;
+    }
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null;
     if (stored && CLIENT_ID_REGEX.test(stored)) {
       loadData(stored);
@@ -238,9 +247,11 @@ export function ClientPortalPage() {
   };
 
   const handleLogout = () => {
+    clearSession();
     window.localStorage.removeItem(STORAGE_KEY);
     setClientId(null);
     setData(null);
+    router.replace('/login');
   };
 
   // ── Estados de carga / acceso ──────────────────────────────────────────────

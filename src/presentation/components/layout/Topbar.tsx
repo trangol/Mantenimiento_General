@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from './SidebarContext';
 import { SyncStatusBadge } from './SyncStatusBadge';
+import { getSession, clearSession } from '@/infrastructure/auth/RoleContext';
 
 // Mapa de rutas a títulos legibles
 const routeTitles: Record<string, { title: string; subtitle: string }> = {
@@ -24,8 +25,18 @@ const routeTitles: Record<string, { title: string; subtitle: string }> = {
 export function Topbar() {
   const { toggle } = useSidebar();
   const pathname  = usePathname();
+  const router    = useRouter();
+  const session   = getSession();
+
+  const handleLogout = () => {
+    clearSession();
+    router.replace('/login');
+  };
 
   const route = routeTitles[pathname] ?? { title: 'MantOS', subtitle: 'Panel Administrador' };
+  const initials = session?.userName
+    ? session.userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'AD';
 
   return (
     <header className="topbar">
@@ -69,13 +80,26 @@ export function Topbar() {
         {/* Separador */}
         <div className="topbar-divider" style={{ width: '1px', height: '28px', background: 'var(--bg-border)' }} />
 
-        {/* Avatar de usuario */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-          <div className="avatar" style={{ fontSize: '14px' }}>AD</div>
+        {/* Avatar de usuario + logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="avatar" style={{ fontSize: '14px' }}>{initials}</div>
           <div className="topbar-user-info">
-            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>Admin</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>admin@mantos.cl</div>
+            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
+              {session?.userName ?? 'Admin'}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Administrador</div>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            style={{
+              background: 'none', border: '1px solid var(--bg-border)', borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)',
+              marginLeft: '4px',
+            }}
+          >
+            Salir
+          </button>
         </div>
       </div>
     </header>

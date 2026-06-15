@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, SectionHeader, Badge, StatCard, EmptyState } from '@/presentation/components/ui';
 import { Route, RouteStop, Vehicle, RecurringSchedule, FrequencyType } from '@/core/domain/Vehicle';
+import { TeamMember } from '@/core/domain/TeamMember';
 import { repositories } from '@/infrastructure/firebase/RepositoryFactory';
 import { GetDailyRoutesUseCase } from '@/use-cases/logistics/GetDailyRoutesUseCase';
 import { CreateRouteUseCase } from '@/use-cases/logistics/CreateRouteUseCase';
@@ -334,6 +335,311 @@ function NewScheduleModal({ vehicles, onClose, onCreate }: {
   );
 }
 
+// ── NuevaJornadaModal ─────────────────────────────────────────────────────────
+// El admin selecciona fecha, técnico, vehículo y clientes → genera Ruta + OTs
+
+interface NuevaJornadaModalProps {
+  onClose: () => void;
+  onCreated: (date: Date) => void;
+}
+
+function NuevaJornadaModal({ onClose, onCreated }: NuevaJornadaModalProps) {
+  const today = new Date();
+  const [date, setDate] = useState(dateToInputValue(today));
+  const [techId, setTechId] = useState('');
+  const [vehicleId, setVehicleId] = useState('');
+  const [techs, setTechs] = useState<TeamMember[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [schedules, setSchedules] = useState<RecurringSchedule[]>([]);
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState<1 | 2>(1);
+
+  useEffect(() => {
+    repositories.team.getActive().then(setTechs);
+    repositories.vehicles.getAll().then(vs => setVehicles(vs.filter(v => v.status === 'active')));
+  }, []);
+
+  // Cuando cambia la fecha, cargar frecuencias del día de semana correspondiente
+  useEffect(() => {
+    if (!date) return;
+    const d = new Date(date + 'T12:00:00');
+    const dow = d.getDay();
+    repositories.vehicles.getSchedules().then(all => {
+      const forDay = all.filter(s => s.daysOfWeek.includes(dow));
+      setSchedules(forDay);
+      // Preseleccionar todos los del técnico si ya está elegido
+      if (techId) {
+        setSelectedClientIds(new Set(forDay.filter(s => s.assignedTechnicianId === techId).map(s => s.clientId)));
+      } else {
+        setSelectedClientIds(new Set(forDay.map(s => s.clientId)));
+      }
+    });
+  }, [date, techId]);
+
+  // Cuando cambia el técnico, filtrar sus clientes programados
+  const handleTechChange = (id: string) => {
+    setTechId(id);
+    const forTech = schedules.filter(s => s.assignedTechnicianId === id);
+    setSelectedClientIds(new Set(forTech.map(s => s.clientId)));
+    // Autocompletar vehículo desde frecuencias del técnico
+    if (forTech.length > 0 && forTech[0].vehicleId) {
+      setVehicleId(forTech[0].vehicleId);
+    }
+  };
+
+  const toggleClient = (clientId: string) => {
+    setSelectedClientIds(prev => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const selectedTech = techs.find(t => t.id === techId);
+  const selectedVehicle = vehicles.find(v => v.id === vehicleId);
+
+  // Clientes disponibles: los de las frecuencias del día ∪ técnico seleccionado
+  const clientOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list: RecurringSchedule[] = [];
+    for (const s of schedules) {
+      if (!seen.has(s.clientId)) { seen.add(s.clientId); list.push(s); }
+    }
+    return list.sort((a, b) => a.clientName.localeCompare(b.clientName));
+  }, [schedules]);
+
+  const handleCreate = async () => {
+    if (!techId || !vehicleId || selectedClientIds.size === 0) {
+      setError('Debes seleccionar técnico, vehículo y al menos un cliente.');
+      return;
+    }
+    setSaving(true); setError('');
+    try {
+      const d = new Date(date + 'T08:00:00');
+      // Construir stops de la ruta
+      const stops: Omit<RouteStop, 'id' | 'routeId'>[] = [];
+      let order = 1;
+      for (const clientId of selectedClientIds) {
+        const sch = schedules.find(s => s.clientId === clientId);
+        if (!sch) continue;
+        stops.push({
+          order: order++,
+          clientId: sch.clientId,
+          clientName: sch.clientName,
+          address: sch.address,
+          commune: sch.commune,
+          assetId: sch.assetId,
+          assetName: sch.assetName,
+          technicianId: techId,
+          technicianName: selectedTech?.fullName ?? '',
+          estimatedDurationMin: sch.estimatedDurationMin,
+          status: 'pending',
+        });
+      }
+
+      const route = await repositories.vehicles.createRoute({
+        name: `Jornada ${selectedTech?.fullName ?? ''} — ${d.toLocaleDateString('es-CL')}`,
+        date: d,
+        vehicleId,
+        vehiclePlate: selectedVehicle?.plate ?? '',
+        driverId: techId,
+        driverName: selectedTech?.fullName ?? '',
+        stops: stops.map(s => ({ ...s, id: crypto.randomUUID(), routeId: '' })),
+        estimatedDuration: stops.reduce((sum, s) => sum + s.estimatedDurationMin, 0),
+        status: 'planned',
+      });
+
+      // Crear OTs (MaintenanceRecord) pendientes para cada parada
+      for (const stop of stops) {
+        // Buscar activo del cliente
+        const assets = await repositories.assets.getByClientId(stop.clientId);
+        const assetId = stop.assetId ?? assets[0]?.id ?? '';
+        await repositories.maintenance.create({
+          id: crypto.randomUUID(),
+          assetId,
+          clientId: stop.clientId,
+          technicianId: techId,
+          routeId: route.id,
+          status: 'pending',
+          scheduledDate: d,
+          checklist: [],
+          checklistCompleted: false,
+          initialPhotos: [],
+          finalPhotos: [],
+          observations: '',
+          workOrderNotes: `Jornada ${d.toLocaleDateString('es-CL')} — ${stop.clientName}`,
+          suppliesUsed: [],
+          totalCost: 0,
+          billingStatus: 'unbilled',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      onCreated(d);
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Error al crear jornada');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1000, padding: '16px',
+    }}>
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)',
+        width: '100%', maxWidth: '540px', maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--bg-border)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '17px' }}>📅 Nueva Jornada</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Paso {step} de 2: {step === 1 ? 'Fecha, técnico y vehículo' : 'Clientes del día'}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--text-muted)' }}>✕</button>
+          </div>
+          {/* Progress bar */}
+          <div style={{ marginTop: '12px', background: 'var(--bg-border)', borderRadius: '4px', height: '4px' }}>
+            <div style={{ width: step === 1 ? '50%' : '100%', height: '100%', background: 'var(--brand-500)', borderRadius: '4px', transition: 'width 0.3s' }} />
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-sm)', padding: '10px', fontSize: '13px', color: 'var(--error-400)', marginBottom: '14px' }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          {step === 1 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label className="form-label">Fecha de la jornada</label>
+                <input className="form-input" type="date" value={date}
+                  min={dateToInputValue(today)}
+                  onChange={e => setDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="form-label">Técnico / Trabajador</label>
+                <select className="form-input" value={techId} onChange={e => handleTechChange(e.target.value)}>
+                  <option value="">— Seleccionar técnico —</option>
+                  {techs.map(t => (
+                    <option key={t.id} value={t.id}>{t.fullName} ({t.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Vehículo</label>
+                <select className="form-input" value={vehicleId} onChange={e => setVehicleId(e.target.value)}>
+                  <option value="">— Seleccionar vehículo —</option>
+                  {vehicles.map(v => (
+                    <option key={v.id} value={v.id}>{v.plate} — {v.brand} {v.model}</option>
+                  ))}
+                </select>
+              </div>
+              {techId && (
+                <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--radius-sm)', padding: '12px', fontSize: '12px' }}>
+                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>Resumen del día ({date ? new Date(date + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long' }) : ''})</div>
+                  <div style={{ color: 'var(--text-secondary)' }}>
+                    Clientes programados: <strong style={{ color: 'var(--text-primary)' }}>{schedules.filter(s => s.assignedTechnicianId === techId).length}</strong>
+                    {' '} · Est. tiempo total: <strong style={{ color: 'var(--brand-400)' }}>{Math.round(schedules.filter(s => s.assignedTechnicianId === techId).reduce((sum, s) => sum + s.estimatedDurationMin, 0) / 60 * 10) / 10}h</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Clientes programados para el día — selecciona los que atenderá hoy
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--brand-400)', fontWeight: 600 }}>
+                  {selectedClientIds.size} seleccionados
+                </div>
+              </div>
+              {clientOptions.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  No hay clientes programados para este día de la semana.<br/>
+                  Puedes configurar frecuencias en el tab Frecuencias.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button onClick={() => {
+                    if (selectedClientIds.size === clientOptions.length) setSelectedClientIds(new Set());
+                    else setSelectedClientIds(new Set(clientOptions.map(c => c.clientId)));
+                  }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--brand-400)', textAlign: 'left', padding: '0', marginBottom: '4px' }}>
+                    {selectedClientIds.size === clientOptions.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  </button>
+                  {clientOptions.map(sch => {
+                    const selected = selectedClientIds.has(sch.clientId);
+                    return (
+                      <div key={sch.clientId} onClick={() => toggleClient(sch.clientId)} style={{
+                        display: 'flex', gap: '12px', alignItems: 'center',
+                        padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                        border: `1px solid ${selected ? 'rgba(59,130,246,0.4)' : 'var(--bg-border)'}`,
+                        background: selected ? 'rgba(59,130,246,0.06)' : 'var(--bg-surface)',
+                        cursor: 'pointer', transition: 'all 0.15s',
+                      }}>
+                        <div style={{
+                          width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                          border: `2px solid ${selected ? 'var(--brand-500)' : 'var(--bg-border)'}`,
+                          background: selected ? 'var(--brand-500)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {selected && <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: '13px' }}>{sch.clientName}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            📍 {sch.commune} · ⏱ {sch.estimatedDurationMin} min
+                            {sch.assetName && ` · 🏊 ${sch.assetName}`}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--bg-border)', display: 'flex', gap: '10px', flexShrink: 0 }}>
+          {step === 2 && (
+            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>← Volver</button>
+          )}
+          {step === 1 ? (
+            <button className="btn btn-primary" style={{ flex: 1 }}
+              disabled={!date || !techId || !vehicleId}
+              onClick={() => { setError(''); setStep(2); }}>
+              Siguiente → Clientes
+            </button>
+          ) : (
+            <button className="btn btn-primary" style={{ flex: 1 }}
+              disabled={saving || selectedClientIds.size === 0}
+              onClick={handleCreate}>
+              {saving ? '⏳ Creando jornada...' : `✅ Crear jornada (${selectedClientIds.size} clientes)`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── PlanningTab: Vista de planificación anticipada ────────────────────────────
 
 function PlanningTab({ schedules, vehicles }: { schedules: RecurringSchedule[]; vehicles: Vehicle[] }) {
@@ -514,6 +820,7 @@ export function LogisticsPage() {
   const [loading, setLoading] = useState(false);
   const [showNewRoute, setShowNewRoute] = useState(false);
   const [showNewSchedule, setShowNewSchedule] = useState(false);
+  const [showNuevaJornada, setShowNuevaJornada] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const selectedRoute = routes.find(r => r.id === selectedRouteId);
@@ -565,6 +872,9 @@ export function LogisticsPage() {
               </button>
               <button className="btn btn-primary btn-sm" onClick={() => setShowNewRoute(true)}>+ Nueva Ruta</button>
             </>
+          )}
+          {tab === 'planning' && (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowNuevaJornada(true)}>📅 + Nueva Jornada</button>
           )}
           {tab === 'schedules' && (
             <button className="btn btn-primary btn-sm" onClick={() => setShowNewSchedule(true)}>+ Nueva Frecuencia</button>
@@ -766,6 +1076,17 @@ export function LogisticsPage() {
           vehicles={vehicles}
           onClose={() => setShowNewSchedule(false)}
           onCreate={s => setSchedules(prev => [...prev, s])}
+        />
+      )}
+      {showNuevaJornada && (
+        <NuevaJornadaModal
+          onClose={() => setShowNuevaJornada(false)}
+          onCreated={(date) => {
+            setShowNuevaJornada(false);
+            setSelectedDate(date);
+            setTab('routes');
+            loadRoutes(date);
+          }}
         />
       )}
     </div>
