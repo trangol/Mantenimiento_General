@@ -23,10 +23,10 @@ const fmtDate = (d: Date) => d.toLocaleDateString('es-CL', { day: '2-digit', mon
 type BadgeColor = 'blue' | 'green' | 'yellow' | 'red' | 'gray' | 'cyan';
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  pending: 'Pendiente', partial: 'Pago parcial', paid: 'Pagado', overdue: 'Vencido', cancelled: 'Anulado',
+  draft: 'Borrador', pending: 'Pendiente', partial: 'Pago parcial', paid: 'Pagado', overdue: 'Vencido', cancelled: 'Anulado',
 };
 const STATUS_COLORS: Record<InvoiceStatus, BadgeColor> = {
-  pending: 'yellow', partial: 'blue', paid: 'green', overdue: 'red', cancelled: 'gray',
+  draft: 'gray', pending: 'yellow', partial: 'blue', paid: 'green', overdue: 'red', cancelled: 'gray',
 };
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   transfer: 'Transferencia', cash: 'Efectivo', card: 'Tarjeta', cheque: 'Cheque',
