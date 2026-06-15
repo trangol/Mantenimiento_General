@@ -24,11 +24,14 @@ export class StartMaintenanceUseCase {
       status: 'in_progress',
       scheduledDate: new Date(),
       startedAt: new Date(), // Tiempo de llegada exacto
+      checklist: [],
+      checklistCompleted: false,
       initialPhotos: [],
       finalPhotos: [],
       observations: '',
       suppliesUsed: [],
       totalCost: 0,
+      billingStatus: 'unbilled',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
