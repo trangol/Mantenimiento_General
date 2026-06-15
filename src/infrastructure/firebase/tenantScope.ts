@@ -32,11 +32,20 @@ export function belongsToTenant(data: Record<string, unknown>): boolean {
   return t === undefined || t === getCurrentTenantId();
 }
 
-/** Elimina claves undefined (Firestore las rechaza). */
-export function stripUndefined<T extends Record<string, unknown>>(data: T): T {
-  const out = { ...data };
-  Object.keys(out).forEach(k => {
-    if (out[k] === undefined) delete out[k];
-  });
-  return out;
+/**
+ * Elimina recursivamente claves undefined (Firestore las rechaza).
+ * Aplica en profundidad: objetos anidados y elementos de arrays.
+ */
+export function stripUndefined<T>(data: T): T {
+  if (Array.isArray(data)) {
+    return data.map(item => stripUndefined(item)) as unknown as T;
+  }
+  if (data !== null && typeof data === 'object' && !(data instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return data;
 }
