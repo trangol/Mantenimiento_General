@@ -7,11 +7,20 @@
  * hace el cotejo automático contra las facturas emitidas, muestra
  * una tabla de revisión y el usuario confirma la conciliación.
  *
- * Columnas esperadas del Excel (en cualquier orden, búsqueda case-insensitive):
- *   - fecha / date / fecha pago
- *   - monto / amount / valor / importe
- *   - referencia / ref / numero / glosa / descripcion
- *   - rut / cliente (opcional)
+ * Formatos bancarios soportados (auto-detectados):
+ *
+ * 1. CuentaRUT (BancoEstado)
+ *    Header en fila 13 (índice 13): Fecha | N° Operación | Descripción |
+ *    Cheques / Cargos $ | Depósitos / Abonos $ | Saldo $
+ *    Fecha: DD/MM/YYYY · Abonos en "Depósitos / Abonos $"
+ *
+ * 2. Cuenta Vista (BCI / otros)
+ *    Header en fila 2 (índice 2): Fecha | Detalle | Monto cargo ($) |
+ *    Monto abono ($) | Saldo ($)
+ *    Fecha: DD-MM-YYYY · Abonos en "Monto abono ($)"
+ *
+ * 3. Genérico (fallback)
+ *    Busca heurísticamente columnas fecha/monto/referencia en cualquier orden.
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
@@ -61,14 +70,96 @@ interface MatchResult {
 }
 
 // ── Parsear Excel ─────────────────────────────────────────────────────────────
+
+/** Normaliza un string para comparación: minúsculas, sin tildes, sin espacios/guiones */
+function norm(s: string): string {
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\s_\-/()$°#]/g, '');
+}
+
+/** Busca la primera clave cuyo nombre normalizado contiene alguno de los candidatos */
 function findCol(row: Record<string, unknown>, candidates: string[]): unknown {
   const key = Object.keys(row).find(k =>
-    candidates.some(c => k.toLowerCase().replace(/[\s_-]/g, '').includes(c.toLowerCase().replace(/[\s_-]/g, '')))
+    candidates.some(c => norm(k).includes(norm(c)))
   );
   return key ? row[key] : undefined;
 }
 
-function parseExcel(file: File): Promise<BankRow[]> {
+/** Convierte un valor crudo a número CLP (maneja negativos, strings, etc.) */
+function toNumber(raw: unknown): number {
+  if (typeof raw === 'number') return raw;
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const s = String(raw).replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  return parseFloat(s) || 0;
+}
+
+/** Convierte DD/MM/YYYY o DD-MM-YYYY a Date */
+function parseChileDate(raw: unknown): Date | undefined {
+  if (raw instanceof Date) return raw;
+  const s = String(raw ?? '').trim();
+  // DD/MM/YYYY o DD-MM-YYYY
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  return undefined;
+}
+
+/**
+ * Detecta el formato del banco leyendo las primeras filas del sheet como array.
+ * Devuelve { headerRow, colFecha, colMonto, colRef, colDetalle }
+ */
+type BankFormat = {
+  name: string;
+  headerRow: number;
+  colFecha: string;
+  colMonto: string;       // columna de abonos/créditos
+  colRef: string;         // número de operación / referencia
+  colDetalle: string;     // glosa / detalle
+};
+
+function detectFormat(allRows: unknown[][]): BankFormat {
+  for (let i = 0; i < allRows.length; i++) {
+    const cells = allRows[i].map(c => norm(String(c ?? '')));
+
+    // CuentaRUT BancoEstado:
+    // headers: fecha | noperacion | descripcion | chequescargos | depositosabonos | saldo
+    if (cells.some(c => c.includes('depositosabonos') || c.includes('depositosabono'))) {
+      return {
+        name: 'CuentaRUT (BancoEstado)',
+        headerRow: i,
+        colFecha: 'Fecha',
+        colMonto: 'Depósitos / Abonos $',
+        colRef: 'N° Operación',
+        colDetalle: 'Descripción',
+      };
+    }
+
+    // Cuenta Vista (BCI / otros):
+    // headers: fecha | detalle | montocargo | montoabono | saldo
+    if (cells.some(c => c.includes('montoabono') || c.includes('abono'))) {
+      return {
+        name: 'Cuenta Vista',
+        headerRow: i,
+        colFecha: 'Fecha',
+        colMonto: 'Monto abono ($)',
+        colRef: '',           // no tiene número de operación
+        colDetalle: 'Detalle',
+      };
+    }
+  }
+
+  // Fallback genérico: sin metadata (row 0 ya son headers)
+  return {
+    name: 'Genérico',
+    headerRow: 0,
+    colFecha: 'fecha',
+    colMonto: 'monto',
+    colRef: 'referencia',
+    colDetalle: 'descripcion',
+  };
+}
+
+function parseExcel(file: File): Promise<{ rows: BankRow[]; bankName: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -76,22 +167,47 @@ function parseExcel(file: File): Promise<BankRow[]> {
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-        const parsed: BankRow[] = rows
+
+        // Leer TODO como array de arrays para detectar el formato
+        const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+        const fmt = detectFormat(allRows);
+
+        // Leer a partir del header real
+        const dataRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
+          defval: '',
+          range: fmt.headerRow,   // empieza desde la fila de headers
+        });
+
+        const parsed: BankRow[] = dataRows
           .map(row => {
-            const montoRaw = findCol(row, ['monto', 'amount', 'valor', 'importe', 'abono', 'credito', 'credit']);
-            const monto = typeof montoRaw === 'number' ? montoRaw : parseFloat(String(montoRaw).replace(/[.$\s]/g, '').replace(',', '.') || '0');
+            // Buscar columnas según el formato detectado
+            const montoRaw = fmt.colMonto
+              ? findCol(row, [fmt.colMonto, 'abono', 'credito', 'deposito'])
+              : findCol(row, ['monto', 'amount', 'valor', 'importe', 'abono', 'credito']);
+
+            const monto = toNumber(montoRaw);
+
+            const fechaRaw = findCol(row, [fmt.colFecha, 'fecha', 'date', 'dia']);
+            const fecha = parseChileDate(fechaRaw);
+
+            const refRaw = fmt.colRef
+              ? findCol(row, [fmt.colRef, 'referencia', 'noperacion', 'operacion', 'folio', 'num'])
+              : findCol(row, ['referencia', 'ref', 'numero', 'num', 'folio', 'operacion']);
+
+            const detRaw = findCol(row, [fmt.colDetalle, 'glosa', 'descripcion', 'detalle', 'concepto']);
+
             return {
-              fecha: findCol(row, ['fecha', 'date', 'dia']) as Date | string | undefined,
+              fecha: fecha ?? (fechaRaw as string | undefined),
               monto,
-              referencia: String(findCol(row, ['referencia', 'ref', 'numero', 'num', 'folio']) ?? ''),
-              descripcion: String(findCol(row, ['glosa', 'descripcion', 'descripción', 'detalle', 'concepto']) ?? ''),
-              rutCliente: String(findCol(row, ['rut', 'cliente', 'ruc']) ?? ''),
+              referencia: String(refRaw ?? '').trim(),
+              descripcion: String(detRaw ?? '').trim(),
+              rutCliente: String(findCol(row, ['rut', 'cliente', 'ruc']) ?? '').trim(),
               raw: row,
-            };
+            } satisfies BankRow;
           })
-          .filter(r => r.monto > 0); // Solo filas con monto positivo (abonos)
-        resolve(parsed);
+          .filter(r => r.monto > 0); // Solo abonos/créditos
+
+        resolve({ rows: parsed, bankName: fmt.name });
       } catch (err) { reject(err); }
     };
     reader.onerror = () => reject(new Error('Error al leer el archivo'));
@@ -155,6 +271,7 @@ export function BillingValidatePage() {
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [bankRows, setBankRows] = useState<BankRow[]>([]);
   const [fileName, setFileName] = useState('');
+  const [bankName, setBankName] = useState('');
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState('');
   const [results, setResults] = useState<MatchResult[]>([]);
@@ -179,11 +296,12 @@ export function BillingValidatePage() {
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setParsing(true); setParseError(''); setBankRows([]); setResults([]);
+    setParsing(true); setParseError(''); setBankRows([]); setResults([]); setBankName('');
     setFileName(file.name);
     try {
-      const rows = await parseExcel(file);
+      const { rows, bankName: detected } = await parseExcel(file);
       setBankRows(rows);
+      setBankName(detected);
       // Hacer el cotejo automático
       const matched = match(invoices, rows);
       setResults(matched);
@@ -311,15 +429,24 @@ export function BillingValidatePage() {
           <button className="btn btn-primary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={parsing || loadingInvoices}>
             {parsing ? '⏳ Procesando...' : '📁 Subir Excel de pagos'}
           </button>
-          {fileName && <span className="text-xs text-secondary">📄 {fileName} · {bankRows.length} filas de pago</span>}
+          {fileName && (
+            <span className="text-xs text-secondary">
+              📄 {fileName} · {bankRows.length} abonos detectados
+              {bankName && <span style={{ marginLeft: '6px', color: 'var(--brand-400)', fontWeight: 600 }}>· {bankName}</span>}
+            </span>
+          )}
           {parseError && <span style={{ fontSize: '12px', color: 'var(--error-400)' }}>⚠️ {parseError}</span>}
         </div>
 
         {/* Instrucciones del formato */}
         <div style={{ marginTop: '14px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', padding: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Formato aceptado:</div>
-          El archivo debe tener columnas con estos nombres (aproximados): <strong>fecha</strong>, <strong>monto</strong> (o valor/abono/importe), <strong>referencia</strong> (o glosa/descripción).
-          El sistema coteará por número de factura en la glosa o por monto similar (±5%).
+          <div style={{ fontWeight: 600, marginBottom: '6px' }}>Formatos bancarios soportados (auto-detectados):</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div>🏦 <strong>CuentaRUT BancoEstado</strong> — columnas: Fecha · N° Operación · Descripción · Depósitos / Abonos $</div>
+            <div>🏦 <strong>Cuenta Vista (BCI / otros)</strong> — columnas: Fecha · Detalle · Monto cargo ($) · Monto abono ($) · Saldo ($)</div>
+            <div>📊 <strong>Genérico</strong> — cualquier Excel con columnas fecha, monto/abono/importe, referencia/glosa</div>
+          </div>
+          <div style={{ marginTop: '6px' }}>El cotejo es automático: por número de factura en la glosa o por monto similar (±5%).</div>
         </div>
       </Card>
 
