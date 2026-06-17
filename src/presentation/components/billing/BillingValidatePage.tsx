@@ -14,7 +14,7 @@
  *    Cheques / Cargos $ | Depósitos / Abonos $ | Saldo $
  *    Fecha: DD/MM/YYYY · Abonos en "Depósitos / Abonos $"
  *
- * 2. Cuenta Vista (BCI / otros)
+ * 2. Cuenta Vista (Banco Santander)
  *    Header en fila 2 (índice 2): Fecha | Detalle | Monto cargo ($) |
  *    Monto abono ($) | Saldo ($)
  *    Fecha: DD-MM-YYYY · Abonos en "Monto abono ($)"
@@ -138,7 +138,7 @@ function detectFormat(allRows: unknown[][]): BankFormat {
     // headers: fecha | detalle | montocargo | montoabono | saldo
     if (cells.some(c => c.includes('montoabono') || c.includes('abono'))) {
       return {
-        name: 'Cuenta Vista',
+        name: 'Cuenta Vista (Banco Santander)',
         headerRow: i,
         colFecha: 'Fecha',
         colMonto: 'Monto abono ($)',
@@ -443,7 +443,7 @@ export function BillingValidatePage() {
           <div style={{ fontWeight: 600, marginBottom: '6px' }}>Formatos bancarios soportados (auto-detectados):</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div>🏦 <strong>CuentaRUT BancoEstado</strong> — columnas: Fecha · N° Operación · Descripción · Depósitos / Abonos $</div>
-            <div>🏦 <strong>Cuenta Vista (BCI / otros)</strong> — columnas: Fecha · Detalle · Monto cargo ($) · Monto abono ($) · Saldo ($)</div>
+            <div>🏦 <strong>Cuenta Vista (Banco Santander)</strong> — columnas: Fecha · Detalle · Monto cargo ($) · Monto abono ($) · Saldo ($)</div>
             <div>📊 <strong>Genérico</strong> — cualquier Excel con columnas fecha, monto/abono/importe, referencia/glosa</div>
           </div>
           <div style={{ marginTop: '6px' }}>El cotejo es automático: por número de factura en la glosa o por monto similar (±5%).</div>
